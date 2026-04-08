@@ -8,3 +8,6 @@ venv/
 data/output/*
 !data/output/.gitkeep
 
+
+# Local Netlify folder
+.netlify
