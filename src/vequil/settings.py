@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from .config import EXPECTED_SALES_CONFIG_PATH, PROCESSORS_CONFIG_PATH
+from .config import BASELINE_CONFIG_PATH, PROCESSORS_CONFIG_PATH
 
 
 @dataclass(frozen=True)
@@ -25,7 +25,7 @@ class ProcessorConfig:
 
 
 @dataclass(frozen=True)
-class ExpectedSalesConfig:
+class BaselineConfig:
     name: str
     filename: str
     field_map: dict[str, str]
@@ -62,9 +62,9 @@ def get_processor_config(name: str, path: Path = PROCESSORS_CONFIG_PATH) -> Proc
     raise KeyError(f"Unknown processor config: {name}")
 
 
-def load_expected_sales_config(path: Path = EXPECTED_SALES_CONFIG_PATH) -> ExpectedSalesConfig:
+def load_baseline_config(path: Path = BASELINE_CONFIG_PATH) -> BaselineConfig:
     payload = json.loads(path.read_text(encoding="utf-8"))
-    return ExpectedSalesConfig(
+    return BaselineConfig(
         name=payload["name"],
         filename=payload["filename"],
         field_map=dict(payload["field_map"]),

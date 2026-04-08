@@ -1,8 +1,0 @@
-BusinessDate,SourceSystem,VenueArea,ExpectedAmount,ExpectedTransactionCount
-2026-04-07,OpenClaw,infra-agent,10.7525,135
-2026-04-07,OpenClaw,shop-bot,11.5331,135
-2026-04-07,OpenClaw,vequil-alpha,11.3779,130
-2026-04-07,Claude,CustomerSupport,32.1741,138
-2026-04-07,Claude,DocAnalyzer,36.4936,162
-2026-04-07,LangChain,ResearchAgent-Chain,1.6048,150
-2026-04-07,OpenAI,Main-App-GPT4,125.955,150

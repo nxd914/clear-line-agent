@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -v '^$')",
+      "Bash(mkdir -p ~/.claude/skills ~/.claude/rules ~/.claude/agents)",
+      "Bash(git clone:*)",
+      "Read(//private/tmp/ecc/skills/**)",
+      "Read(//private/tmp/ecc/rules/**)",
+      "Read(//private/tmp/ecc/agents/**)",
+      "Bash(cp -r /tmp/ecc/skills/deployment-patterns ~/.claude/skills/)",
+      "Bash(cp -r /tmp/ecc/skills/backend-patterns ~/.claude/skills/)",
+      "Bash(cp -r /tmp/ecc/skills/api-design ~/.claude/skills/)",
+      "Bash(cp -r /tmp/ecc/skills/market-research ~/.claude/skills/)",
+      "Bash(cp -r /tmp/ecc/skills/investor-materials ~/.claude/skills/)",
+      "Bash(PYTHONPATH=src python:*)",
+      "Bash(pip install:*)",
+      "Bash(PYTHONPATH=src pytest tests/ -q --ignore=tests/test_baseline.py)",
+      "Bash(PYTHONPATH=src pytest:*)",
+      "Bash(PYTHONPATH=src uvicorn vequil.asgi:app --host 127.0.0.1 --port 8099)",
+      "Bash(curl -s http://127.0.0.1:8099/health)",
+      "Bash(curl -s -X POST http://127.0.0.1:8099/api/demo -H \"Content-Type: application/json\" -d '{\"email\":\"test@vequil.com\"}')",
+      "Bash(kill %1)",
+      "Bash(pip show:*)",
+      "Bash(railway version:*)",
+      "Bash(git -C /Users/noahdonovan/vequil status --short)",
+      "Bash(git -C /Users/noahdonovan/vequil remote -v)",
+      "Bash(brew install:*)",
+      "Bash(git rm:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

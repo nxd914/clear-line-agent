@@ -1,6 +1,0 @@
-[build]
-  publish = "web/static"
-
-[build.environment]
-  NODE_VERSION = "22"
-

@@ -1,201 +1,185 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!-- Google Tag Manager -->
-  <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-  new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-  'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
-  })(window,document,'script','dataLayer','GTM-WB7KKWSS');</script>
-  <!-- End Google Tag Manager -->
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vequil · Agent Operations Console</title>
-  <meta name="description" content="Vequil operations console for agent activity, anomalies, and reliability." />
+  <title>Vequil Console</title>
+  <meta name="description" content="Live agent activity, anomaly risk, and spend behavior in one console." />
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="app.css" />
-  <link rel="icon" href="./logo.png" type="image/png" />
+  <link rel="stylesheet" href="/app.css" />
+  <link rel="icon" href="/static/brand-mark.svg" type="image/svg+xml" />
 </head>
 <body>
-  <!-- Google Tag Manager (noscript) -->
-  <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-WB7KKWSS"
-  height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
-  <!-- End Google Tag Manager (noscript) -->
-  <!-- Auth Gate -->
   <div id="auth-gate" class="auth-gate">
     <div class="auth-box">
-      <img src="./logo.png" alt="Vequil" style="height:52px;width:auto;object-fit:contain;margin-bottom:20px;" />
-      <div class="auth-title">Vequil Operations Console</div>
-      <div class="auth-sub">Account access only.</div>
-      <input type="password" id="api-key-input" class="auth-input" placeholder="Enter API key…" autocomplete="current-password" />
-      <button id="auth-submit" class="auth-btn">Unlock Dashboard</button>
+      <img src="/static/brand-mark.svg" alt="Vequil" style="height:52px;width:52px;object-fit:contain;margin-bottom:20px;" />
+      <div class="auth-title">Vequil Console</div>
+      <div class="auth-sub">Private access for operators.</div>
+      <input type="password" id="api-key-input" class="auth-input" placeholder="Enter API key" autocomplete="current-password" />
+      <button id="auth-submit" class="auth-btn">Unlock Console</button>
       <div id="auth-error" class="auth-error" style="display:none;">Invalid API key. Try again.</div>
     </div>
   </div>
 
-  <!-- Main App (hidden until authenticated) -->
   <div id="app" class="app-shell" style="display:none;">
-
-    <!-- Sidebar Nav -->
     <nav class="sidebar">
-      <a href="/" class="sb-logo">
-        <img src="./logo.png" alt="Vequil VQ Logo" style="height:44px; width:auto; border-radius:8px; object-fit:contain;">
+      <a href="/" class="sb-logo" style="display:flex;align-items:center;gap:10px;text-decoration:none;">
+        <img src="/static/brand-mark.svg" alt="Vequil" style="height:36px;width:36px;object-fit:contain;">
+        <span style="font-family:var(--font-display);font-weight:800;font-size:20px;color:var(--ink);">Vequil</span>
       </a>
-      <div class="sb-section-label">Overview</div>
-      <a href="#" class="sb-link active" id="nav-dashboard">
-        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-        Dashboard
-      </a>
-      <a href="#" class="sb-link" id="nav-queue">
-        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        Action Feed
-      </a>
-      <a href="#" class="sb-link" id="nav-processors">
-        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Active Agents
-      </a>
-      <a href="#" class="sb-link" id="nav-reports">
-        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-        Weekly Report Card
-      </a>
-      <div class="sb-section-label">Run History</div>
-      <select id="event-selector" class="sb-select">
-        <option value="">Current Run (latest)</option>
+
+      <div class="sb-section-label">Console</div>
+      <a href="#" class="sb-link active" id="nav-overview">Overview</a>
+      <a href="#" class="sb-link" id="nav-anomalies">Anomalies</a>
+      <a href="#" class="sb-link" id="nav-events">Events</a>
+      <a href="#" class="sb-link" id="nav-report">Weekly Report</a>
+
+      <div class="sb-section-label">Workspace</div>
+      <select id="workspace-filter" class="sb-select">
+        <option value="">All workspaces</option>
       </select>
-      <input type="text" id="new-event-id" class="sb-input" placeholder="New Run Name (e.g. week_15)">
-      <div class="sb-section-label" style="margin-top:auto;">Operations</div>
-      <button id="run-btn" class="sb-run-btn">
-        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        Sync Activity
-      </button>
+
+      <div class="sb-section-label">Actions</div>
+      <button id="refresh-btn" class="sb-run-btn">Refresh Console</button>
       <button id="logout-btn" class="sb-logout-btn">Sign out</button>
     </nav>
 
-    <!-- Main content -->
     <main class="main-content">
-
-      <!-- Header -->
       <div class="top-bar">
         <div>
-          <div class="top-bar-title">Vequil Operations Console</div>
+          <div class="top-bar-title">Agent Activity Ledger</div>
           <div class="top-bar-sub" id="generated-at">—</div>
         </div>
-        <div class="top-bar-right">
-          <button id="export-btn" class="export-btn">
-            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Export Report
-          </button>
+        <div class="top-bar-right" style="display:flex;align-items:center;gap:12px;">
+          <button id="copy-report-link" class="export-btn">Copy Public Report Link</button>
           <div id="status-pill" class="status-pill idle">Idle</div>
         </div>
       </div>
 
-      <!-- Loading state -->
       <div id="loading-state" class="loading-state" style="display:none;">
         <div class="spinner"></div>
-        <div class="loading-text">Refreshing activity intelligence…<br><span class="loading-sub">This usually takes a few seconds for a full workspace run.</span></div>
+        <div class="loading-text">Refreshing live activity…<br><span class="loading-sub">Vequil is loading the latest workspace and event data.</span></div>
       </div>
 
-      <!-- Error state -->
       <div id="error-state" class="error-state" style="display:none;">
         <div class="error-icon">⚠</div>
         <div id="error-msg">An error occurred.</div>
-        <button onclick="loadDashboard()" class="retry-btn">Try Again</button>
+        <button id="retry-btn" class="retry-btn">Try Again</button>
       </div>
 
-      <!-- Dashboard content -->
       <div id="dashboard-content">
-        <!-- Activation strip -->
         <div class="panel" style="margin-bottom:16px;">
           <div class="panel-head">
-            <h2>5-Minute Activation</h2>
+            <h2>First Value In Five Minutes</h2>
             <span class="panel-badge" id="activation-state">Not Connected</span>
           </div>
-          <div style="display:grid; gap:12px;">
-            <div style="display:flex; gap:8px; flex-wrap:wrap;">
-              <input id="workspace-name" class="filter-input" placeholder="Workspace name (e.g. Context Operator)" style="max-width:320px;" />
-              <input id="workspace-slug" class="filter-input" placeholder="Workspace slug (e.g. context-operator)" style="max-width:260px;" />
-              <button id="create-workspace-btn" class="export-btn">Connect Source</button>
+          <div style="display:grid;gap:12px;">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <input id="workspace-name" class="filter-input" placeholder="Workspace name" style="max-width:320px;" />
+              <input id="workspace-slug" class="filter-input" placeholder="Workspace slug" style="max-width:260px;" />
+              <button id="create-workspace-btn" class="export-btn">Create Workspace</button>
             </div>
-            <div style="display:flex; gap:8px; flex-wrap:wrap;">
-              <input id="workspace-key" class="filter-input" placeholder="Workspace key appears here after connect" readonly style="min-width:520px;" />
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <input id="workspace-key" class="filter-input" placeholder="Workspace key appears here" readonly style="min-width:520px;" />
               <button id="copy-key-btn" class="export-btn">Copy Key</button>
-              <button id="sample-activity-btn" class="export-btn">Send Sample Activity</button>
+              <button id="sample-activity-btn" class="export-btn">Send Test Event</button>
             </div>
-            <div id="activation-msg" class="top-bar-sub">Create a workspace, copy your key, then send sample activity to validate your setup.</div>
+            <div id="activation-msg" class="top-bar-sub">Create a workspace, copy the key, then send one test event to confirm the pipeline.</div>
           </div>
         </div>
 
-        <!-- KPI Metrics -->
         <div class="metrics" id="metrics"></div>
 
-        <!-- Grid: Processors + Variance -->
         <div class="dash-grid">
           <div class="panel">
             <div class="panel-head">
-            <h2>Agents</h2>
-              <span class="panel-badge" id="proc-count"></span>
+              <h2>Workspaces</h2>
+              <span class="panel-badge" id="workspace-count"></span>
             </div>
-            <div id="processor-summary"></div>
+            <div id="workspace-summary"></div>
           </div>
 
           <div class="panel">
             <div class="panel-head">
-            <h2>Variance Signals</h2>
+              <h2>Runtime Activity</h2>
+              <span class="panel-badge" id="runtime-count"></span>
             </div>
-            <div id="expected-summary"></div>
+            <div id="runtime-summary"></div>
           </div>
         </div>
 
-        <!-- Exception queue table -->
         <div class="panel" style="margin-top:16px;">
           <div class="panel-head">
-            <h2>Anomaly Queue <span class="panel-badge danger" id="finding-count"></span></h2>
+            <h2>Anomaly Queue</h2>
+            <span class="panel-badge danger" id="finding-count"></span>
             <div class="filter-row">
-              <input id="queue-filter" class="filter-input" placeholder="Filter by processor, type…" />
+              <input id="queue-filter" class="filter-input" placeholder="Filter by agent, runtime, label…" />
             </div>
           </div>
           <div class="table-wrap">
-            <table id="exception-table">
+            <table>
               <thead>
                 <tr>
                   <th>Time</th>
+                  <th>Workspace</th>
+                  <th>Runtime</th>
                   <th>Agent</th>
-                  <th>Project / Path</th>
-                  <th>Action ID</th>
-                  <th>Resource / Cost</th>
-                  <th>Flag</th>
-                  <th>AI Audit</th>
-                  <th>Operator Review</th>
+                  <th>Tool</th>
+                  <th>Anomaly</th>
+                  <th>Status</th>
+                  <th>Resolution</th>
                 </tr>
               </thead>
-              <tbody id="action-queue"></tbody>
+              <tbody id="anomaly-queue"></tbody>
             </table>
-            <div id="no-results" class="no-results" style="display:none;">No matching anomalies.</div>
+            <div id="no-anomalies" class="no-results" style="display:none;">No anomalies for this workspace.</div>
           </div>
         </div>
 
-      </div><!-- /dashboard-content -->
-
+        <div class="panel" style="margin-top:16px;">
+          <div class="panel-head">
+            <h2>Recent Events</h2>
+            <span class="panel-badge" id="event-count"></span>
+            <div class="filter-row">
+              <input id="events-filter" class="filter-input" placeholder="Filter by workspace, event, tool…" />
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Workspace</th>
+                  <th>Runtime</th>
+                  <th>Agent</th>
+                  <th>Event</th>
+                  <th>Tool</th>
+                  <th>Status</th>
+                  <th>Cost</th>
+                </tr>
+              </thead>
+              <tbody id="events-table"></tbody>
+            </table>
+            <div id="no-events" class="no-results" style="display:none;">No events yet.</div>
+          </div>
+        </div>
+      </div>
     </main>
-  </div><!-- /app -->
+  </div>
 
-  <!-- Report Card Modal -->
   <div id="report-modal" class="modal-overlay" style="display:none;">
     <div class="modal-content">
       <div class="modal-header">
-        <h2 style="font-size:18px;">Your Weekly Agent Report Card</h2>
+        <h2 style="font-size:18px;">Weekly Agent Report</h2>
         <button id="close-modal" class="close-btn">&times;</button>
       </div>
-      <div class="report-card-preview" id="report-card-preview">
-        <!-- Card content injected by JS -->
-      </div>
+      <div class="report-card-preview" id="report-card-preview"></div>
       <div class="modal-footer">
-        <button id="share-x-btn" class="share-action-btn">Share on X</button>
-        <button id="copy-report-link" class="share-action-btn secondary">Copy Public Link</button>
+        <button id="copy-report-link-modal" class="share-action-btn secondary">Copy Public Link</button>
       </div>
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="/app.js"></script>
 </body>
 </html>

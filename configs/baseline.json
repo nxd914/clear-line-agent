@@ -1,0 +1,13 @@
+{
+  "name": "Cost Baseline",
+  "filename": "pos_expected_sales.csv",
+  "field_map": {
+    "business_date":        "BusinessDate",
+    "source_system":        "SourceSystem",
+    "agent_context":        "VenueArea",
+    "expected_amount":      "ExpectedAmount",
+    "expected_event_count": "ExpectedTransactionCount"
+  },
+  "amount_tolerance": 5.0,
+  "count_tolerance": 0
+}

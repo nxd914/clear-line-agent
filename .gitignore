@@ -8,10 +8,7 @@ venv/
 *.log
 tmp/
 data/*.db
-data/logs/*.log
+data/logs/
 data/output/*
 !data/output/.gitkeep
-
-
-# Local Netlify folder
-.netlify/
+data/raw/*.csv

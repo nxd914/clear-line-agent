@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "vequil": {
+      "command": "python",
+      "args": ["src/vequil/mcp_server.py"],
+      "env": {
+        "VEQUIL_URL": "http://localhost:8000",
+        "VEQUIL_API_KEY": "",
+        "VEQUIL_WORKSPACE": ""
+      }
+    }
+  }
+}

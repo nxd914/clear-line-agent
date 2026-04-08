@@ -1,81 +1,33 @@
-/* ─────────────────────────────────────────────────────────────
-   app.js — Vequil Operations Console
-   Handles: auth gate, API polling, activity + anomaly rendering
-   ───────────────────────────────────────────────────────────── */
-
 const LS_KEY = 'vequil_api_key';
 const LS_WORKSPACE_KEY = 'vequil_workspace_key';
-const API_BASE = '';          // same-origin; server.py serves everything
-
-// ── Utilities ────────────────────────────────────────────────
 
 const $ = id => document.getElementById(id);
 const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
-function el(tag, className, text) {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
+let currentWorkspaceId = '';
+let currentWorkspaceSlug = 'all';
+let allEvents = [];
+let allAnomalies = [];
+let allWorkspaces = [];
+
+function storedKey() {
+  return localStorage.getItem(LS_KEY) || '';
 }
 
-function fmt(val) {
-  const n = parseFloat(val);
-  return isNaN(n) ? (val ?? '—') : currency.format(n);
+function workspaceKey() {
+  return localStorage.getItem(LS_WORKSPACE_KEY) || '';
 }
 
-// ── Auth ─────────────────────────────────────────────────────
-
-function storedKey() { return localStorage.getItem(LS_KEY); }
-
-function showApp() {
-  $('auth-gate').style.display = 'none';
-  $('app').style.display = 'flex';
-  hydrateActivation();
-  loadHistory();
-  loadDashboard();
+function fmtMoney(value) {
+  const amount = Number(value || 0);
+  return currency.format(amount);
 }
 
-function showAuth() {
-  $('app').style.display = 'none';
-  $('auth-gate').style.display = 'flex';
+function fmtDate(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
-
-async function submitKey() {
-  const key = $('api-key-input').value.trim();
-  if (!key) return;
-  $('auth-error').style.display = 'none';
-  $('auth-submit').disabled = true;
-  $('auth-submit').textContent = 'Verifying…';
-
-  try {
-    const res = await fetch(`${API_BASE}/api/health`, {
-      headers: { 'X-API-Key': key }
-    });
-    if (res.ok) {
-      localStorage.setItem(LS_KEY, key);
-      showApp();
-    } else {
-      $('auth-error').style.display = 'block';
-    }
-  } catch {
-    $('auth-error').textContent = 'Could not reach server. Is it running?';
-    $('auth-error').style.display = 'block';
-  } finally {
-    $('auth-submit').disabled = false;
-    $('auth-submit').textContent = 'Unlock Console';
-  }
-}
-
-$('auth-submit').addEventListener('click', submitKey);
-$('api-key-input').addEventListener('keydown', e => { if (e.key === 'Enter') submitKey(); });
-
-$('logout-btn').addEventListener('click', () => {
-  localStorage.removeItem(LS_KEY);
-  showAuth();
-});
-
-// ── Status pill ───────────────────────────────────────────────
 
 function setStatus(state, label) {
   const pill = $('status-pill');
@@ -83,70 +35,73 @@ function setStatus(state, label) {
   pill.textContent = label;
 }
 
-// ── Run + Export buttons ─────────────────────────────────────
- 
-$('run-btn').addEventListener('click', () => loadDashboard(true));
- 
-$('export-btn').addEventListener('click', async () => {
-  const eventId = $('event-selector').value;
-  const key = storedKey();
-  try {
-    const url = new URL(`${window.location.origin}/api/export`);
-    if (eventId) url.searchParams.append('event_id', eventId);
-    
-    const res = await fetch(url, {
-      headers: key ? { 'X-API-Key': key } : {}
-    });
-    if (res.status === 401) { showAuth(); return; }
-    if (!res.ok) throw new Error('Export failed');
-    
-    const blob = await res.blob();
-    const blobUrl = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.style.display = 'none';
-    a.href = blobUrl;
-    a.download = `Vequil_Report_${eventId || 'Latest'}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    
-    setTimeout(() => {
-        window.URL.revokeObjectURL(blobUrl);
-        a.remove();
-    }, 1000);
-  } catch (err) {
-    alert(`Export Error: ${err.message}`);
-  }
-});
+function showAuth() {
+  $('app').style.display = 'none';
+  $('auth-gate').style.display = 'flex';
+}
 
-// ── API fetch ─────────────────────────────────────────────────
- 
+function showApp() {
+  $('auth-gate').style.display = 'none';
+  $('app').style.display = 'flex';
+  hydrateActivation();
+  loadOverview();
+}
+
+async function submitKey() {
+  const key = $('api-key-input').value.trim();
+  if (!key) return;
+
+  $('auth-error').style.display = 'none';
+  $('auth-submit').disabled = true;
+  $('auth-submit').textContent = 'Verifying…';
+
+  try {
+    const res = await fetch('/api/health', {
+      headers: { 'X-API-Key': key }
+    });
+    if (!res.ok) throw new Error('Unauthorized');
+    localStorage.setItem(LS_KEY, key);
+    showApp();
+  } catch {
+    $('auth-error').style.display = 'block';
+  } finally {
+    $('auth-submit').disabled = false;
+    $('auth-submit').textContent = 'Unlock Console';
+  }
+}
+
 async function apiFetch(path, params = {}) {
-  const key = storedKey();
-  const url = new URL(`${window.location.origin}${path}`);
-  Object.keys(params).forEach(k => url.searchParams.append(k, params[k]));
+  const url = new URL(path, window.location.origin);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== '' && value !== null && value !== undefined) {
+      url.searchParams.set(key, String(value));
+    }
+  });
 
   const res = await fetch(url, {
-    headers: key ? { 'X-API-Key': key } : {}
+    headers: storedKey() ? { 'X-API-Key': storedKey() } : {}
   });
-  if (res.status === 401) { showAuth(); throw new Error('Unauthorized'); }
-  if (!res.ok) throw new Error(`Server error ${res.status}`);
+  if (res.status === 401) {
+    showAuth();
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}));
+    throw new Error(payload.detail || payload.error || `Server error ${res.status}`);
+  }
   return res.json();
-}
-
-function workspaceKey() {
-  return localStorage.getItem(LS_WORKSPACE_KEY) || '';
-}
-
-function setActivationMessage(msg, isError = false) {
-  const node = $('activation-msg');
-  node.textContent = msg;
-  node.style.color = isError ? '#c0392b' : '';
 }
 
 function setActivationState(connected) {
   const badge = $('activation-state');
   badge.textContent = connected ? 'Connected' : 'Not Connected';
   badge.className = connected ? 'panel-badge' : 'panel-badge danger';
+}
+
+function setActivationMessage(message, isError = false) {
+  const node = $('activation-msg');
+  node.textContent = message;
+  node.style.color = isError ? '#dc2626' : '';
 }
 
 function hydrateActivation() {
@@ -162,36 +117,39 @@ async function createWorkspace() {
     setActivationMessage('Workspace name and slug are required.', true);
     return;
   }
+
   try {
-    const key = storedKey();
-    const res = await fetch(`${window.location.origin}/api/workspaces`, {
+    const res = await fetch('/api/workspaces', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(key ? { 'X-API-Key': key } : {})
+        ...(storedKey() ? { 'X-API-Key': storedKey() } : {})
       },
       body: JSON.stringify({ name, slug })
     });
     const payload = await res.json();
     if (!res.ok) throw new Error(payload.detail || payload.error || 'Failed to create workspace');
 
-    const wsKey = payload.workspace.ingest_api_key;
-    localStorage.setItem(LS_WORKSPACE_KEY, wsKey);
-    $('workspace-key').value = wsKey;
+    localStorage.setItem(LS_WORKSPACE_KEY, payload.workspace.ingest_api_key);
+    $('workspace-key').value = payload.workspace.ingest_api_key;
+    $('workspace-name').value = payload.workspace.name;
+    $('workspace-slug').value = payload.workspace.slug;
     setActivationState(true);
-    setActivationMessage(`Source connected for ${payload.workspace.name}. Next: send sample activity.`);
+    setActivationMessage(`Workspace ${payload.workspace.name} is ready. Send one test event to validate ingest.`);
+    await loadOverview();
   } catch (err) {
-    setActivationMessage(err.message || 'Workspace setup failed.', true);
+    setActivationMessage(err.message || 'Workspace creation failed.', true);
   }
 }
 
 async function sendSampleActivity() {
   const wsKey = $('workspace-key').value.trim() || workspaceKey();
   if (!wsKey) {
-    setActivationMessage('Connect source first to get a workspace key.', true);
+    setActivationMessage('Create a workspace first to get a key.', true);
     return;
   }
-  const sample = {
+
+  const event = {
     source: 'openclaw',
     event_type: 'tool_call',
     event_status: 'success',
@@ -200,364 +158,374 @@ async function sendSampleActivity() {
     session_id: 'main-session',
     tool_name: 'bash',
     cost_usd: 0.01,
-    metadata: { action_id: `sample-${Date.now()}`, environment: 'dashboard' }
+    metadata: {
+      action_id: `evt-${Date.now()}`,
+      project: 'vequil',
+      environment: 'dashboard'
+    }
   };
+
   try {
-    const res = await fetch(`${window.location.origin}/api/ingest`, {
+    const res = await fetch('/api/ingest', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Workspace-Key': wsKey
       },
-      body: JSON.stringify(sample)
+      body: JSON.stringify(event)
     });
     const payload = await res.json();
-    if (!res.ok) throw new Error(payload.detail || payload.error || 'Failed to send sample activity');
+    if (!res.ok) throw new Error(payload.detail || payload.error || 'Failed to ingest test event');
     setActivationState(true);
-    setActivationMessage(`Sample activity accepted (event #${payload.event_id}).`);
+    setActivationMessage(`Test event accepted as #${payload.event_id}. The console is now live.`);
+    await loadOverview();
   } catch (err) {
-    setActivationMessage(err.message || 'Sample activity failed.', true);
+    setActivationMessage(err.message || 'Test event failed.', true);
   }
 }
 
-async function loadHistory() {
-  try {
-    const data = await apiFetch('/api/history');
-    const sel = $('event-selector');
-    sel.innerHTML = '<option value="">Current Run (latest)</option>';
-    data.history.forEach(ev => {
-      const opt = el('option', '', ev.event_id);
-      opt.value = ev.event_id;
-      sel.appendChild(opt);
-    });
-  } catch (err) {
-    console.error('Failed to load history', err);
-  }
-}
-
-$('event-selector').addEventListener('change', () => loadDashboard());
-$('create-workspace-btn')?.addEventListener('click', createWorkspace);
-$('sample-activity-btn')?.addEventListener('click', sendSampleActivity);
-$('copy-key-btn')?.addEventListener('click', async () => {
-  const val = $('workspace-key').value.trim();
-  if (!val) {
-    setActivationMessage('No workspace key to copy yet.', true);
-    return;
-  }
-  await navigator.clipboard.writeText(val);
-  setActivationMessage('Workspace key copied.');
-});
-
-// ── Main load ─────────────────────────────────────────────────
-
-let allActions = [];
-
-async function loadDashboard(forceRun = false) {
-  $('loading-state').style.display = 'flex';
-  $('error-state').style.display = 'none';
-  $('dashboard-content').style.opacity = '0.3';
-  const btn = $('run-btn');
-  btn.disabled = true;
-  btn.innerHTML = `
-    <svg style="animation: spin 0.6s linear infinite;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-    Syncing...
+function metricCard(title, value, color = '') {
+  const card = document.createElement('div');
+  card.className = 'metric';
+  card.innerHTML = `
+    <div class="metric-title">${title}</div>
+    <div class="metric-value ${color}">${value}</div>
   `;
-  setStatus('running', 'Syncing…');
- 
-  const newId = $('new-event-id').value.trim();
-  const eventId = (forceRun && newId) ? newId : $('event-selector').value;
- 
-  try {
-    const params = {};
-    if (forceRun) params.run = '1';
-    if (eventId) params.event_id = eventId;
- 
-    const payload = await apiFetch('/api/reconciliation', params);
-    renderAll(payload);
-    setStatus('done', 'Synced');
-    $('dashboard-content').style.opacity = '1';
-    
-    if (forceRun) {
-      loadHistory();
-      $('new-event-id').value = ''; 
-    }
-  } catch (err) {
-    $('error-msg').textContent = err.message;
-    $('error-state').style.display = 'flex';
-    setStatus('error', 'Error');
-  } finally {
-    $('loading-state').style.display = 'none';
-    const btn = $('run-btn');
-    btn.disabled = false;
-    btn.innerHTML = `
-      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-      Sync Activity
-    `;
-  }
+  return card;
 }
 
-// ── Render all ────────────────────────────────────────────────
-
-function renderAll(payload) {
-  renderMetrics(payload.metrics);
-  renderAgentSummary(payload.processor_summary);
-  renderResourceSummary(payload.expected_variance_summary);
-  allActions = payload.discrepancies || [];
-  renderActionFeed(allActions);
-  $('generated-at').textContent =
-    `Last refresh: ${new Date(payload.generated_at).toLocaleString()}`;
-  $('proc-count').textContent = `${payload.processor_summary.length} active`;
-  $('finding-count').textContent = `${allActions.length} open`;
-}
-
-// ── Metrics ───────────────────────────────────────────────────
-
-function renderMetrics(m) {
+function renderMetrics(metrics) {
   const container = $('metrics');
   container.innerHTML = '';
-
-  const cards = [
-    ['Total Actions', m.total_transactions,               ''],
-    ['Anomalies',     m.flagged_transactions,              m.flagged_transactions > 0 ? 'danger' : 'success'],
-    ['Open Audits',   m.total_findings,                    m.total_findings > 0 ? 'danger' : 'success'],
-    ['Burn Rate',     fmt(m.total_volume),                 'blue'],
-    ['Verified',      fmt(m.cleared_volume),               'success'],
-    ['At-Risk $',     fmt(m.at_risk_volume),               m.at_risk_volume > 0 ? 'danger' : ''],
-    ['Net Variance',  fmt(m.net_expected_variance),        m.net_expected_variance < 0 ? 'danger' : ''],
-  ];
-
-  cards.forEach(([title, value, colorClass]) => {
-    const card = el('div', 'metric');
-    card.append(el('div', 'metric-title', title));
-    const v = el('div', `metric-value ${colorClass}`.trim(), String(value));
-    card.append(v);
-    container.append(card);
-  });
+  container.append(
+    metricCard('Total Events', metrics.total_events.toLocaleString()),
+    metricCard('Anomalies', metrics.anomaly_events.toLocaleString(), metrics.anomaly_events ? 'danger' : 'success'),
+    metricCard('Resolved', metrics.resolved_events.toLocaleString(), metrics.resolved_events ? 'success' : ''),
+    metricCard('Success Rate', `${metrics.success_rate}%`, metrics.success_rate >= 95 ? 'success' : 'blue'),
+    metricCard('Spend', fmtMoney(metrics.total_cost_usd), metrics.total_cost_usd > 0 ? 'blue' : ''),
+    metricCard('Active Agents', metrics.active_agents.toLocaleString()),
+    metricCard('Sources', metrics.active_sources.toLocaleString()),
+    metricCard('Workspaces', metrics.active_workspaces.toLocaleString())
+  );
 }
 
-// ── Agent summary ─────────────────────────────────────────
-
-function renderAgentSummary(rows) {
-  const container = $('processor-summary');
+function renderList(targetId, rows, emptyText, renderRow) {
+  const container = $(targetId);
   container.innerHTML = '';
-  const list = el('div', 'summary-list');
-
-  rows.forEach(row => {
-    const item = el('div', 'summary-item');
-    const left = el('div');
-    left.append(el('div', 'summary-item-name', row.processor));
-    left.append(el('div', 'summary-meta',
-      `${row.transactions.toLocaleString()} actions · ${row.flagged_transactions} flagged · ${row.findings} open`));
-    const amt = el('div', 'summary-amount', fmt(row.total_amount));
-    item.append(left, amt);
-    list.append(item);
-  });
-
-  container.append(list);
-}
-
-// ── Resource summary ─────────────────────────────────
-
-function renderResourceSummary(rows) {
-  const container = $('expected-summary');
-  container.innerHTML = '';
-
-  if (!rows || !rows.length) {
-    container.append(el('div', 'muted', 'No resource variances flagged.'));
+  if (!rows.length) {
+    const empty = document.createElement('div');
+    empty.className = 'muted';
+    empty.textContent = emptyText;
+    container.append(empty);
     return;
   }
-
-  const list = el('div', 'summary-list');
-  rows.forEach(row => {
-    const item = el('div', 'summary-item');
-    const left = el('div');
-    left.append(el('div', 'summary-item-name', `${row.venue_area}`));
-    left.append(el('div', 'summary-meta',
-      `${row.source_system} · Alloc ${fmt(row.expected_amount)} · Actual ${fmt(row.settled_amount)}`));
-    const varAmt = parseFloat(row.variance_amount);
-    const cls = 'summary-amount' + (varAmt < 0 ? ' negative' : '');
-    item.append(left, el('div', cls, fmt(varAmt)));
-    list.append(item);
-  });
-
+  const list = document.createElement('div');
+  list.className = 'summary-list';
+  rows.forEach(row => list.append(renderRow(row)));
   container.append(list);
 }
 
-// ── Action Feed ───────────────────────────────────────────
-
-const FLAG_CLASS = {
-    'Unsettled status':       'unsettled',
-    'Missing auth code':      'missing-auth',
-    'Duplicate reference':    'duplicate',
-    'High-value review':      'high-value',
-};
-
-function flagClass(type) {
-  for (const [k, v] of Object.entries(FLAG_CLASS)) {
-    if (type && type.toLowerCase().includes(k.toLowerCase().split(' ')[0])) return v;
-  }
-  return 'default';
+function summaryItem(name, meta, amount) {
+  const item = document.createElement('div');
+  item.className = 'summary-item';
+  item.innerHTML = `
+    <div>
+      <div class="summary-item-name">${name}</div>
+      <div class="summary-meta">${meta}</div>
+    </div>
+    <div class="summary-amount">${amount}</div>
+  `;
+  return item;
 }
 
-function renderActionFeed(rows) {
-  const tbody = $('action-queue');
+function renderWorkspaces(rows) {
+  $('workspace-count').textContent = `${rows.length} total`;
+  renderList(
+    'workspace-summary',
+    rows,
+    'No workspaces yet.',
+    row => summaryItem(
+      row.name,
+      `${row.event_count} events · ${row.anomaly_count} anomalies · ${row.last_event_at ? fmtDate(row.last_event_at) : 'No activity yet'}`,
+      fmtMoney(row.total_cost_usd)
+    )
+  );
+}
+
+function renderRuntimes(rows) {
+  $('runtime-count').textContent = `${rows.length} sources`;
+  renderList(
+    'runtime-summary',
+    rows,
+    'No runtime activity yet.',
+    row => summaryItem(
+      row.source,
+      `${row.event_count} events · ${row.anomaly_count} anomalies · ${row.agent_count} agents`,
+      fmtMoney(row.total_cost_usd)
+    )
+  );
+}
+
+function flagClass(label) {
+  const text = (label || '').toLowerCase();
+  if (text.includes('loop')) return 'duplicate';
+  if (text.includes('blocked') || text.includes('denied')) return 'missing-auth';
+  if (text.includes('cost')) return 'high-value';
+  if (text.includes('time') || text.includes('warn')) return 'unsettled';
+  return 'variance';
+}
+
+function renderAnomalies(rows) {
+  const tbody = $('anomaly-queue');
   tbody.innerHTML = '';
-  $('no-results').style.display = rows.length ? 'none' : 'block';
-  
+  $('finding-count').textContent = `${rows.length} open`;
+  $('no-anomalies').style.display = rows.length ? 'none' : 'block';
+
   rows.forEach(row => {
     const tr = document.createElement('tr');
-  
-    const timeStr = row.transaction_at
-      ? new Date(row.transaction_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      : '—';
-  
-    [
-      timeStr,
-      row.processor,
-      row.venue_area || '—',
-      row.reference_id,
-      fmt(row.amount),
-    ].forEach(val => tr.append(el('td', '', val ?? '—')));
-  
-    // Flag badge
-    const flagTd = el('td');
-    const badge = el('span', `flag-badge ${flagClass(row.discrepancy_type)}`, row.discrepancy_type || '—');
-    flagTd.append(badge);
-    tr.append(flagTd);
-  
-    // AI Audit
-    const diagTd = el('td');
-    diagTd.append(el('div', 'diag-text', row.diagnosis || '—'));
-    tr.append(diagTd);
-  
-    // Operator Review
-    const resTd = el('td');
-    const cell = el('div', 'resolve-cell');
-    
-    if (row.resolution) {
-      cell.append(el('div', 'res-status', 'Reviewed'));
-      cell.append(el('div', 'res-note', row.resolution));
+    const resolutionCell = document.createElement('td');
+    const resolutionWrap = document.createElement('div');
+    resolutionWrap.className = 'resolve-cell';
+
+    if (row.resolved_note) {
+      resolutionWrap.innerHTML = `
+        <div class="res-status">Resolved</div>
+        <div class="res-note">${row.resolved_note}</div>
+      `;
     } else {
-      const btn = el('button', 'resolve-btn', 'Archive Action');
-      btn.onclick = () => reviewAction(row);
-      cell.append(btn);
+      const btn = document.createElement('button');
+      btn.className = 'resolve-btn';
+      btn.textContent = 'Resolve';
+      btn.onclick = () => reviewEvent(row);
+      resolutionWrap.append(btn);
     }
-    
-    resTd.append(cell);
-    tr.append(resTd);
-  
+    resolutionCell.append(resolutionWrap);
+
+    const anomalyBadge = `<span class="flag-badge ${flagClass(row.anomaly_label)}">${row.anomaly_label || '—'}</span>`;
+    tr.innerHTML = `
+      <td>${fmtDate(row.event_at)}</td>
+      <td>${row.workspace_name}</td>
+      <td>${row.source}</td>
+      <td>${row.agent_id}</td>
+      <td>${row.tool_name || '—'}</td>
+      <td>${anomalyBadge}</td>
+      <td>${row.event_status}</td>
+    `;
+    tr.append(resolutionCell);
     tbody.append(tr);
   });
 }
 
-async function reviewAction(row) {
-  const note = prompt(`Enter audit note for ${row.processor} action ${row.reference_id}:`, 'Verified by operator.');
-  if (note === null) return;
+function renderEvents(rows) {
+  const tbody = $('events-table');
+  tbody.innerHTML = '';
+  $('event-count').textContent = `${rows.length} shown`;
+  $('no-events').style.display = rows.length ? 'none' : 'block';
 
-  const findingId = `${row.processor}_${row.reference_id}_${row.discrepancy_type}`;
-  const key = storedKey();
+  rows.forEach(row => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${fmtDate(row.event_at)}</td>
+      <td>${row.workspace_name}</td>
+      <td>${row.source}</td>
+      <td>${row.agent_id}</td>
+      <td>${row.event_type}</td>
+      <td>${row.tool_name || '—'}</td>
+      <td>${row.event_status}</td>
+      <td>${fmtMoney(row.cost_usd)}</td>
+    `;
+    tbody.append(tr);
+  });
+}
+
+function populateWorkspaceFilter(rows, selectedWorkspace) {
+  const select = $('workspace-filter');
+  const previous = currentWorkspaceId;
+  select.innerHTML = '<option value="">All workspaces</option>';
+  rows.forEach(row => {
+    const option = document.createElement('option');
+    option.value = String(row.id);
+    option.textContent = row.name;
+    select.append(option);
+  });
+
+  const nextValue = selectedWorkspace ? String(selectedWorkspace.id) : previous;
+  if ([...select.options].some(option => option.value === nextValue)) {
+    select.value = nextValue;
+  } else {
+    select.value = '';
+  }
+
+  currentWorkspaceId = select.value;
+  const match = rows.find(row => String(row.id) === select.value);
+  currentWorkspaceSlug = match ? match.slug : 'all';
+}
+
+async function loadOverview() {
+  $('loading-state').style.display = 'flex';
+  $('error-state').style.display = 'none';
+  $('dashboard-content').style.opacity = '0.35';
+  setStatus('running', 'Refreshing');
 
   try {
-    const res = await fetch(`${API_BASE}/api/resolve`, {
-      method: 'POST',
-      headers: { 
-        'X-API-Key': key || '',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ finding_id: findingId, resolution: note })
-    });
-    if (res.ok) {
-      loadDashboard();
-    } else {
-      alert('Audit failed to save.');
-    }
+    const payload = await apiFetch('/api/overview', currentWorkspaceId ? { workspace_id: currentWorkspaceId } : {});
+
+    allEvents = payload.recent_events || [];
+    allAnomalies = payload.recent_anomalies || [];
+    allWorkspaces = payload.workspaces || [];
+
+    populateWorkspaceFilter(payload.workspaces || [], payload.selected_workspace);
+    renderMetrics(payload.metrics);
+    renderWorkspaces(payload.workspaces || []);
+    renderRuntimes(payload.runtimes || []);
+    renderAnomalies(allAnomalies);
+    renderEvents(allEvents);
+
+    $('generated-at').textContent = payload.metrics.last_event_at
+      ? `Last event ${fmtDate(payload.metrics.last_event_at)}`
+      : 'No live events yet';
+
+    setActivationState(Boolean(workspaceKey()) || payload.metrics.total_events > 0);
+    setStatus('done', 'Live');
   } catch (err) {
-    alert(`Error: ${err.message}`);
+    $('error-msg').textContent = err.message || 'Failed to load console.';
+    $('error-state').style.display = 'flex';
+    setStatus('error', 'Error');
+  } finally {
+    $('loading-state').style.display = 'none';
+    $('dashboard-content').style.opacity = '1';
   }
 }
 
-// ── Filter ────────────────────────────────────────────────────
+async function reviewEvent(row) {
+  const note = window.prompt(`Resolution note for event #${row.event_id}`, 'Reviewed by operator.');
+  if (note === null) return;
+  try {
+    const res = await fetch('/api/resolve', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(storedKey() ? { 'X-API-Key': storedKey() } : {})
+      },
+      body: JSON.stringify({ event_id: row.event_id, resolution: note })
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.detail || payload.error || 'Failed to resolve event');
+    await loadOverview();
+  } catch (err) {
+    window.alert(err.message || 'Failed to resolve event');
+  }
+}
 
-$('queue-filter').addEventListener('input', e => {
-  const q = e.target.value.toLowerCase();
-  const filtered = allActions.filter(r =>
-    [r.processor, r.discrepancy_type, r.venue_area, r.reference_id, r.diagnosis]
-      .some(v => v && v.toLowerCase().includes(q))
+function applyAnomalyFilter(query) {
+  const q = query.trim().toLowerCase();
+  if (!q) {
+    renderAnomalies(allAnomalies);
+    return;
+  }
+  const filtered = allAnomalies.filter(row =>
+    [row.workspace_name, row.source, row.agent_id, row.tool_name, row.anomaly_label, row.event_status]
+      .some(value => String(value || '').toLowerCase().includes(q))
   );
-  renderActionFeed(filtered);
-});
+  renderAnomalies(filtered);
+}
 
-// ── Modal Logic ───────────────────────────────────────────────
+function applyEventsFilter(query) {
+  const q = query.trim().toLowerCase();
+  if (!q) {
+    renderEvents(allEvents);
+    return;
+  }
+  const filtered = allEvents.filter(row =>
+    [row.workspace_name, row.source, row.agent_id, row.tool_name, row.event_type, row.event_status]
+      .some(value => String(value || '').toLowerCase().includes(q))
+  );
+  renderEvents(filtered);
+}
+
+async function copyPublicLink() {
+  const path = `/report/${currentWorkspaceSlug || 'all'}`;
+  await navigator.clipboard.writeText(`${window.location.origin}${path}`);
+}
 
 function showReportCard() {
-  const modal = $('report-modal');
-  const preview = $('report-card-preview');
-  
-  // Extract stats for the card
-  const totalActions = allActions.length + (parseInt($('proc-count').textContent) || 0) * 100; // Mocking total including historical
-  const topAnomaly = allActions.length > 0 ? allActions[0].discrepancy_type : 'None detected';
-  const topAgent = $('processor-summary').querySelector('.summary-item-name')?.textContent || 'Claude';
+  const totalEvents = allEvents.length;
+  const anomalies = allAnomalies.length;
+  const topAgent = allEvents[0]?.agent_id || 'No active agent';
+  const topAnomaly = allAnomalies[0]?.anomaly_label || 'No anomalies detected';
 
-  preview.innerHTML = `
+  $('report-card-preview').innerHTML = `
     <div class="inner-card">
       <div class="ic-header">
-        <div class="ic-title">Agent Quality Score</div>
-        <div class="ic-badge">WEEK 14 · A+</div>
+        <div class="ic-title">Weekly Agent Report</div>
+        <div class="ic-badge">${currentWorkspaceSlug === 'all' ? 'ALL WORKSPACES' : currentWorkspaceSlug.toUpperCase()}</div>
       </div>
       <div class="ic-stats">
         <div class="ics-item">
-          <span class="label">Weekly Activity</span>
-          <div class="val">${totalActions.toLocaleString()} actions</div>
-          <div class="sub">Verified by Vequil</div>
+          <span class="label">Activity</span>
+          <div class="val">${totalEvents.toLocaleString()} events</div>
+          <div class="sub">Captured by Vequil</div>
         </div>
         <div class="ics-item">
-          <span class="label">Weirdest Anomaly</span>
-          <div class="val">${topAnomaly}</div>
-          <div class="sub">Detected and flagged</div>
+          <span class="label">Anomaly Risk</span>
+          <div class="val">${anomalies.toLocaleString()} flagged</div>
+          <div class="sub">${topAnomaly}</div>
         </div>
         <div class="ics-item">
           <span class="label">Most Active Agent</span>
           <div class="val">${topAgent}</div>
-          <div class="sub">Highest task resolution rate</div>
+          <div class="sub">Most recent high-volume runtime</div>
         </div>
       </div>
-      <div class="ic-stamp">VERIFIED BY VEQUIL</div>
+      <div class="ic-stamp">VEQUIL VERIFIED</div>
     </div>
   `;
-  
-  modal.style.display = 'flex';
+  $('report-modal').style.display = 'flex';
 }
 
-$('nav-reports')?.addEventListener('click', e => {
-    e.preventDefault();
-    showReportCard();
+$('auth-submit').addEventListener('click', submitKey);
+$('api-key-input').addEventListener('keydown', event => {
+  if (event.key === 'Enter') submitKey();
 });
-
-$('close-modal')?.addEventListener('click', () => {
+$('logout-btn').addEventListener('click', () => {
+  localStorage.removeItem(LS_KEY);
+  showAuth();
+});
+$('create-workspace-btn').addEventListener('click', createWorkspace);
+$('sample-activity-btn').addEventListener('click', sendSampleActivity);
+$('copy-key-btn').addEventListener('click', async () => {
+  const value = $('workspace-key').value.trim();
+  if (!value) {
+    setActivationMessage('No workspace key to copy yet.', true);
+    return;
+  }
+  await navigator.clipboard.writeText(value);
+  setActivationMessage('Workspace key copied.');
+});
+$('refresh-btn').addEventListener('click', loadOverview);
+$('retry-btn').addEventListener('click', loadOverview);
+$('workspace-filter').addEventListener('change', event => {
+  currentWorkspaceId = event.target.value;
+  const match = allWorkspaces.find(row => String(row.id) === currentWorkspaceId);
+  currentWorkspaceSlug = match ? match.slug : 'all';
+  loadOverview();
+});
+$('queue-filter').addEventListener('input', event => applyAnomalyFilter(event.target.value));
+$('events-filter').addEventListener('input', event => applyEventsFilter(event.target.value));
+$('copy-report-link').addEventListener('click', copyPublicLink);
+$('copy-report-link-modal').addEventListener('click', copyPublicLink);
+$('nav-report').addEventListener('click', event => {
+  event.preventDefault();
+  showReportCard();
+});
+$('close-modal').addEventListener('click', () => {
+  $('report-modal').style.display = 'none';
+});
+window.addEventListener('click', event => {
+  if (event.target === $('report-modal')) {
     $('report-modal').style.display = 'none';
+  }
 });
-
-window.onclick = (e) => {
-    if (e.target == $('report-modal')) $('report-modal').style.display = 'none';
-};
-
-$('share-x-btn')?.addEventListener('click', () => {
-    const text = encodeURIComponent("My agents are actually behaving. Mostly. Check my Vequil Report Card. #Vequil #OpenClaw");
-    window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
-});
-
-$('copy-report-link')?.addEventListener('click', (e) => {
-    const btn = e.target;
-    const oldText = btn.textContent;
-    const eventId = $('event-selector').value || 'latest';
-    const publicUrl = window.location.origin + '/report/' + eventId;
-    
-    navigator.clipboard.writeText(publicUrl);
-    btn.textContent = 'Link Copied!';
-    setTimeout(() => btn.textContent = oldText, 2000);
-});
-
-// ── Boot ──────────────────────────────────────────────────────
 
 if (storedKey()) {
   showApp();

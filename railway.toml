@@ -1,0 +1,7 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "env PYTHONPATH=src gunicorn -k uvicorn.workers.UvicornWorker vequil.asgi:app --bind 0.0.0.0:$PORT"
+healthcheckPath = "/health"
+restartPolicyType = "on_failure"

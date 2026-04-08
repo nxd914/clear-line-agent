@@ -7,17 +7,17 @@
       "source_timezone": "UTC",
       "target_timezone": null,
       "column_map": {
-        "venue_area":         "Project",
-        "terminal_id":        "SessionID",
-        "reference_id":       "ActionID",
-        "auth_code":          "ToolUsed",
-        "tender_type":        "Model",
-        "amount":             "ComputeCost",
-        "settlement_status":  "TaskStatus",
-        "batch_id":           "Deployment"
+        "agent_context":  "Project",
+        "session_id":     "SessionID",
+        "action_id":      "ActionID",
+        "auth_key":       "ToolUsed",
+        "model_id":       "Model",
+        "amount":         "ComputeCost",
+        "action_status":  "TaskStatus",
+        "deployment_id":  "Deployment"
       },
       "constants": {
-        "transaction_type": "ACTION"
+        "action_type": "ACTION"
       }
     },
     {
@@ -27,17 +27,17 @@
       "source_timezone": "UTC",
       "target_timezone": null,
       "column_map": {
-        "venue_area":         "App_Name",
-        "terminal_id":        "Conversation_Root",
-        "reference_id":       "Message_UUID",
-        "auth_code":          "Auth_Key_ID",
-        "transaction_type":   "Turn_Type",
-        "amount":             "Token_Price",
-        "settlement_status":  "State",
-        "batch_id":           "Org_ID"
+        "agent_context":  "App_Name",
+        "session_id":     "Conversation_Root",
+        "action_id":      "Message_UUID",
+        "auth_key":       "Auth_Key_ID",
+        "action_type":    "Turn_Type",
+        "amount":         "Token_Price",
+        "action_status":  "State",
+        "deployment_id":  "Org_ID"
       },
       "constants": {
-        "tender_type": "ANTHROPIC"
+        "model_id": "ANTHROPIC"
       }
     },
     {
@@ -47,17 +47,17 @@
       "source_timezone": null,
       "target_timezone": null,
       "column_map": {
-        "venue_area":         "TracePath",
-        "terminal_id":        "RunID",
-        "reference_id":       "StepID",
-        "amount":             "EstimatedCost",
-        "settlement_status":  "CompletionStatus",
-        "batch_id":           "ProjectID"
+        "agent_context":  "TracePath",
+        "session_id":     "RunID",
+        "action_id":      "StepID",
+        "amount":         "EstimatedCost",
+        "action_status":  "CompletionStatus",
+        "deployment_id":  "ProjectID"
       },
       "constants": {
-        "auth_code":          "LC_AUTH",
-        "tender_type":        "LC_TOKEN",
-        "transaction_type":   "CHAIN_STEP"
+        "auth_key":    "LC_AUTH",
+        "model_id":    "LC_TOKEN",
+        "action_type": "CHAIN_STEP"
       }
     },
     {
@@ -67,15 +67,15 @@
       "source_timezone": "UTC",
       "target_timezone": null,
       "column_map": {
-        "venue_area":         "AppID",
-        "terminal_id":        "UserSID",
-        "reference_id":       "ReqID",
-        "auth_code":          "ApiKeyLast4",
-        "tender_type":        "ModelName",
-        "transaction_type":   "CallType",
-        "amount":             "PriceUSD",
-        "settlement_status":  "ResponseCode",
-        "batch_id":           "BillingCycle"
+        "agent_context":  "AppID",
+        "session_id":     "UserSID",
+        "action_id":      "ReqID",
+        "auth_key":       "ApiKeyLast4",
+        "model_id":       "ModelName",
+        "action_type":    "CallType",
+        "amount":         "PriceUSD",
+        "action_status":  "ResponseCode",
+        "deployment_id":  "BillingCycle"
       },
       "constants": {}
     }

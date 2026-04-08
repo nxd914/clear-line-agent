@@ -14,13 +14,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
-from .config import OUTPUT_DIR, ROOT, WEB_DIR
-from .notifier import notifier
-from .pipeline import run_pipeline
+from .config import WEB_DIR
 from .storage import VequilStorage
 
 
-app = FastAPI(title="Vequil", version="0.1")
+app = FastAPI(title="Vequil", version="0.2")
 
 _storage = VequilStorage()
 
@@ -30,17 +28,14 @@ _CORS_ALLOW_ORIGIN: str = os.getenv("VEQUIL_CORS_ALLOW_ORIGIN", "*")
 _PUBLIC_RATE_LIMIT_PER_MINUTE = int(os.getenv("VEQUIL_PUBLIC_RATE_LIMIT", "60"))
 
 _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-_EVENT_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_\-]{1,80}$")
-_RESOLUTION_MAX_LEN = 2000
 _WORKSPACE_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9 _\-]{2,80}$")
 _WORKSPACE_SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9\-]{1,62}[a-z0-9]$")
+_RESOLUTION_MAX_LEN = 2000
 
-# per-ip per-endpoint request timestamps (seconds)
 _buckets: dict[tuple[str, str], deque[float]] = defaultdict(deque)
 
 
 def _client_ip(request: Request) -> str:
-    # Keep it simple; if you later put this behind a proxy, add trusted proxy logic.
     return request.client.host if request.client else "unknown"
 
 
@@ -57,15 +52,75 @@ def _rate_limited(ip: str, endpoint: str) -> bool:
     return False
 
 
-def _normalize_event_id(event_id: str | None) -> str | None:
-    candidate = (event_id or "").strip()
-    if not candidate:
+def _audit_log(action: str, request: Request, **fields: Any) -> None:
+    payload = {
+        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "action": action,
+        "method": request.method,
+        "path": str(request.url.path),
+        "ip": _client_ip(request),
+        **fields,
+    }
+    print(json.dumps(payload, ensure_ascii=True))
+
+
+def _file_or_404(path: Path) -> FileResponse:
+    if not path.exists():
+        raise HTTPException(status_code=int(HTTPStatus.NOT_FOUND), detail="Not found")
+    return FileResponse(path)
+
+
+def _normalize_workspace_slug(value: str | None) -> str | None:
+    slug = (value or "").strip().lower()
+    if not slug:
         return None
-    if candidate == "latest":
-        return "latest"
-    if not _EVENT_ID_PATTERN.match(candidate):
+    if slug in {"all", "latest"}:
+        return slug
+    if not _WORKSPACE_SLUG_PATTERN.match(slug):
         return None
-    return candidate
+    return slug
+
+
+def _normalize_legacy_slug(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9\-]+", "-", value.strip().lower()).strip("-")
+    return slug[:63] or "legacy-runtime"
+
+
+def _anomaly_label(event_status: str, metadata: dict[str, Any]) -> str | None:
+    for key in ("anomaly_label", "anomaly_type", "risk_label", "flag", "issue", "alert"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:80]
+
+    if metadata.get("loop_detected"):
+        return "Loop detected"
+    if metadata.get("blocked"):
+        return "Blocked action"
+    if metadata.get("cost_spike"):
+        return "Cost spike"
+    if metadata.get("approval_required"):
+        return "Approval required"
+
+    status = event_status.strip().lower()
+    mapping = {
+        "error": "Execution error",
+        "failed": "Execution error",
+        "failure": "Execution error",
+        "timeout": "Timed out",
+        "timed_out": "Timed out",
+        "blocked": "Blocked action",
+        "denied": "Blocked action",
+        "warning": "Warning",
+        "cancelled": "Cancelled run",
+    }
+    return mapping.get(status)
+
+
+def require_auth(x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> None:
+    if not _AUTH_REQUIRED:
+        return
+    if not _API_KEY or x_api_key != _API_KEY:
+        raise HTTPException(status_code=int(HTTPStatus.UNAUTHORIZED), detail="Unauthorized")
 
 
 class WorkspaceCreateRequest(BaseModel):
@@ -87,61 +142,16 @@ class IngestEventRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-def _resolve_event_output_dir(event_id: str | None) -> Path:
-    normalized = (event_id or "").strip()
-    if not normalized or normalized == "latest":
-        root_dashboard = OUTPUT_DIR / "dashboard.json"
-        if root_dashboard.exists():
-            return OUTPUT_DIR
-
-        events_dir = OUTPUT_DIR / "events"
-        if events_dir.exists():
-            candidates = [
-                path
-                for path in events_dir.iterdir()
-                if path.is_dir() and (path / "dashboard.json").exists()
-            ]
-            if candidates:
-                return max(candidates, key=lambda path: path.stat().st_mtime)
-        return OUTPUT_DIR
-
-    return OUTPUT_DIR / "events" / normalized
-
-
-def _audit_log(action: str, request: Request, **fields: Any) -> None:
-    payload = {
-        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "action": action,
-        "method": request.method,
-        "path": str(request.url.path),
-        "ip": _client_ip(request),
-        **fields,
-    }
-    print(json.dumps(payload, ensure_ascii=True))
-
-
-def require_auth(x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> None:
-    if not _AUTH_REQUIRED:
-        return
-    if not _API_KEY or x_api_key != _API_KEY:
-        raise HTTPException(status_code=int(HTTPStatus.UNAUTHORIZED), detail="Unauthorized")
-
-
 @app.middleware("http")
 async def add_cors_headers(request: Request, call_next):
     resp: Response = await call_next(request)
     resp.headers["Access-Control-Allow-Origin"] = _CORS_ALLOW_ORIGIN
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-API-Key, X-Workspace-Key"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
     return resp
 
 
-# Static assets (JS/CSS/images). We do NOT mount at "/" because that would shadow /api/*.
 app.mount("/static", StaticFiles(directory=str(WEB_DIR), html=False), name="static")
-
-
-def _file_or_404(path: Path) -> FileResponse:
-    if not path.exists():
-        raise HTTPException(status_code=int(HTTPStatus.NOT_FOUND), detail="Not found")
-    return FileResponse(path)
 
 
 @app.get("/")
@@ -150,19 +160,42 @@ def landing():
 
 
 @app.get("/dashboard.html")
+@app.get("/console")
 def dashboard():
     return _file_or_404(WEB_DIR / "dashboard.html")
 
 
+@app.get("/report/{workspace_slug}")
+def report_card(workspace_slug: str):
+    normalized = _normalize_workspace_slug(workspace_slug)
+    if normalized is None:
+        raise HTTPException(status_code=int(HTTPStatus.BAD_REQUEST), detail="Invalid workspace slug")
+    return _file_or_404(WEB_DIR / "report.html")
+
+
 @app.get("/app.js")
 def app_js():
-    # Backwards-compat: existing HTML may reference /app.js
     return _file_or_404(WEB_DIR / "app.js")
 
 
-@app.get("/logo.png")
-def logo_png():
-    return _file_or_404(WEB_DIR / "logo.png")
+@app.get("/app.css")
+def app_css():
+    return _file_or_404(WEB_DIR / "app.css")
+
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def robots():
+    return _file_or_404(WEB_DIR / "robots.txt")
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def sitemap():
+    return _file_or_404(WEB_DIR / "sitemap.xml")
 
 
 @app.get("/api/health")
@@ -222,16 +255,16 @@ def onboarding_quickstart(_: None = Depends(require_auth)):
     return {
         "steps": [
             "Create a workspace with POST /api/workspaces",
-            "Copy ingest_api_key from the response",
-            "Send first event with POST /api/ingest and X-Workspace-Key header",
-            "Open /dashboard.html and run sync",
+            "Copy the ingest_api_key from the response",
+            "Send your first event to POST /api/ingest with X-Workspace-Key",
+            "Open /dashboard.html and refresh the console",
         ],
         "example_ingest_event": {
             "source": "openclaw",
             "event_type": "tool_call",
             "event_status": "success",
             "event_at": "2026-04-08T01:30:00Z",
-            "agent_id": "ops-agent-1",
+            "agent_id": "main-agent",
             "session_id": "session-123",
             "tool_name": "bash",
             "cost_usd": 0.012,
@@ -242,56 +275,14 @@ def onboarding_quickstart(_: None = Depends(require_auth)):
 
 @app.get("/api/history")
 def history(_: None = Depends(require_auth)):
-    events_dir = OUTPUT_DIR / "events"
-    items: list[dict[str, Any]] = []
-    if events_dir.exists():
-        for d in events_dir.iterdir():
-            if d.is_dir() and (d / "dashboard.json").exists():
-                items.append({"event_id": d.name, "created_at": d.stat().st_mtime})
-    items.sort(key=lambda x: x["created_at"], reverse=True)
-    return {"history": items}
+    return {"workspaces": _storage.list_workspace_rollups()}
 
 
-@app.get("/api/reconciliation")
-def reconciliation(run: str | None = None, event_id: str | None = None, _: None = Depends(require_auth)):
-    force_run = (run or "") == "1"
-    normalized = _normalize_event_id(event_id)
-    if event_id is not None and normalized is None:
-        raise HTTPException(status_code=int(HTTPStatus.BAD_REQUEST), detail="Invalid event_id format")
-
-    dashboard_dir = _resolve_event_output_dir(normalized)
-    dashboard_path = dashboard_dir / "dashboard.json"
-    if force_run or not dashboard_path.exists():
-        run_pipeline(event_id=normalized)
-
-    payload = json.loads(dashboard_path.read_text(encoding="utf-8"))
-
-    resolutions = _storage.get_resolutions_map()
-    for finding in payload.get("discrepancies", []):
-        fid = f"{finding['processor']}_{finding['reference_id']}_{finding['discrepancy_type']}"
-        if fid in resolutions:
-            finding["resolution"] = resolutions[fid]
-    return payload
-
-
-@app.get("/api/export")
-def export(event_id: str | None = None, _: None = Depends(require_auth)):
-    normalized = _normalize_event_id(event_id)
-    if event_id is not None and normalized is None:
-        raise HTTPException(status_code=int(HTTPStatus.BAD_REQUEST), detail="Invalid event_id format")
-
-    report_dir = _resolve_event_output_dir(normalized)
-    report_path = report_dir / "reconciliation_report.xlsx"
-    if not report_path.exists():
-        run_pipeline(event_id=normalized)
-
-    filename = f'vequil_report_{normalized or "latest"}.xlsx'
-    return FileResponse(
-        report_path,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename=filename,
-        headers={"Access-Control-Expose-Headers": "Content-Disposition"},
-    )
+@app.get("/api/overview")
+def overview(workspace_id: int | None = None, _: None = Depends(require_auth)):
+    if workspace_id is not None and not _storage.workspace_exists(workspace_id):
+        raise HTTPException(status_code=int(HTTPStatus.NOT_FOUND), detail="Workspace not found")
+    return _storage.get_overview(workspace_id=workspace_id)
 
 
 @app.post("/api/resolve")
@@ -300,51 +291,20 @@ async def resolve(request: Request, _: None = Depends(require_auth)):
     if not isinstance(data, dict):
         raise HTTPException(status_code=int(HTTPStatus.BAD_REQUEST), detail="JSON payload must be an object")
 
-    finding_id = str(data.get("finding_id", "")).strip()
+    event_id = int(data.get("event_id") or 0)
     resolution = str(data.get("resolution", "")).strip()
-    if not finding_id:
-        raise HTTPException(status_code=int(HTTPStatus.BAD_REQUEST), detail="Missing finding_id")
+    if event_id <= 0:
+        raise HTTPException(status_code=int(HTTPStatus.BAD_REQUEST), detail="Missing event_id")
     if not resolution:
         raise HTTPException(status_code=int(HTTPStatus.BAD_REQUEST), detail="Resolution is required")
     if len(resolution) > _RESOLUTION_MAX_LEN:
         raise HTTPException(status_code=int(HTTPStatus.BAD_REQUEST), detail="Resolution too long")
 
-    _storage.upsert_resolution(finding_id, resolution)
-    _audit_log("resolution_saved", request, finding_id=finding_id)
-    return {"status": "ok"}
-
-
-@app.post("/api/demo")
-async def demo(request: Request):
-    ip = _client_ip(request)
-    if _rate_limited(ip, "demo"):
-        raise HTTPException(status_code=int(HTTPStatus.TOO_MANY_REQUESTS), detail="Rate limit exceeded")
-
-    data = await request.json()
-    if not isinstance(data, dict):
-        raise HTTPException(status_code=int(HTTPStatus.BAD_REQUEST), detail="JSON payload must be an object")
-
-    email = str(data.get("email", "")).strip().lower()
-    if not email:
-        raise HTTPException(status_code=int(HTTPStatus.BAD_REQUEST), detail="Email is required")
-    if not _EMAIL_PATTERN.match(email):
-        raise HTTPException(status_code=int(HTTPStatus.BAD_REQUEST), detail="Invalid email format")
-
-    _storage.insert_lead(email=email, ip=ip)
-    notifier.notify_lead(email)
-    _audit_log("lead_captured", request, email=email)
-    return {"status": "ok", "message": "Signup captured"}
-
-
-@app.post("/api/log")
-async def log(request: Request, _: None = Depends(require_auth)):
-    data = await request.json()
-    if not isinstance(data, dict):
-        raise HTTPException(status_code=int(HTTPStatus.BAD_REQUEST), detail="JSON payload must be an object")
-
-    _storage.insert_action_log(data)
-    _audit_log("agent_action_logged", request, action_id=data.get("ActionID"), tool=data.get("ToolUsed"))
-    return {"status": "ok", "message": "Action logged"}
+    updated = _storage.resolve_ingest_event(event_id=event_id, note=resolution)
+    if not updated:
+        raise HTTPException(status_code=int(HTTPStatus.NOT_FOUND), detail="Event not found")
+    _audit_log("resolution_saved", request, event_id=event_id)
+    return {"status": "ok", "event_id": event_id}
 
 
 @app.post("/api/ingest")
@@ -361,6 +321,7 @@ def ingest(
         raise HTTPException(status_code=int(HTTPStatus.UNAUTHORIZED), detail="Invalid workspace key")
 
     payload = body.model_dump()
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
     event_id = _storage.insert_ingest_event(
         workspace_id=workspace["id"],
         event_type=body.event_type,
@@ -372,6 +333,7 @@ def ingest(
         tool_name=body.tool_name,
         cost_usd=body.cost_usd,
         payload=payload,
+        anomaly_label=_anomaly_label(body.event_status, metadata),
     )
     _audit_log(
         "ingest_event",
@@ -387,39 +349,75 @@ def ingest(
     }
 
 
+@app.post("/api/log")
+async def legacy_log(request: Request, _: None = Depends(require_auth)):
+    data = await request.json()
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=int(HTTPStatus.BAD_REQUEST), detail="JSON payload must be an object")
+
+    project_name = str(data.get("Project") or "Legacy Runtime").strip() or "Legacy Runtime"
+    workspace = _storage.ensure_workspace(name=project_name, slug=_normalize_legacy_slug(project_name))
+    metadata = {
+        "action_id": data.get("ActionID"),
+        "model": data.get("Model"),
+        "deployment": data.get("Deployment"),
+    }
+    payload = {
+        "source": str(data.get("Runtime") or "legacy").strip() or "legacy",
+        "event_type": str(data.get("ToolUsed") or "tool_result").strip() or "tool_result",
+        "event_status": str(data.get("TaskStatus") or "success").strip() or "success",
+        "event_at": str(data.get("Timestamp") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())).strip(),
+        "agent_id": str(data.get("AgentID") or data.get("Model") or "legacy-agent").strip() or "legacy-agent",
+        "session_id": str(data.get("SessionID") or "").strip() or None,
+        "tool_name": str(data.get("ToolUsed") or "").strip() or None,
+        "cost_usd": float(data.get("ComputeCost") or 0.0),
+        "metadata": metadata,
+    }
+    event_id = _storage.insert_ingest_event(
+        workspace_id=int(workspace["id"]),
+        event_type=payload["event_type"],
+        event_status=payload["event_status"],
+        event_at=payload["event_at"],
+        source=payload["source"],
+        agent_id=payload["agent_id"],
+        session_id=payload["session_id"],
+        tool_name=payload["tool_name"],
+        cost_usd=payload["cost_usd"],
+        payload=payload,
+        anomaly_label=_anomaly_label(payload["event_status"], metadata),
+    )
+    _audit_log("legacy_log_ingested", request, workspace_id=workspace["id"], event_id=event_id)
+    return {"status": "ok", "event_id": event_id, "workspace": workspace}
+
+
+class DemoRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+
+
+@app.post("/api/demo")
+def demo_waitlist(body: DemoRequest, request: Request):
+    ip = _client_ip(request)
+    if _rate_limited(ip, "demo"):
+        return JSONResponse({"error": "Rate limit exceeded"}, status_code=int(HTTPStatus.TOO_MANY_REQUESTS))
+    email = body.email.strip().lower()
+    if not _EMAIL_PATTERN.match(email):
+        raise HTTPException(status_code=int(HTTPStatus.BAD_REQUEST), detail="Invalid email address")
+    _storage.capture_lead(email)
+    _audit_log("demo_waitlist", request, email=email)
+    return {"status": "ok"}
+
+
 @app.get("/api/public/report")
-def public_report(request: Request, event_id: str | None = None):
+def public_report(request: Request, workspace_slug: str | None = None, days: int = 7):
     ip = _client_ip(request)
     if _rate_limited(ip, "public_report"):
         return JSONResponse({"error": "Rate limit exceeded"}, status_code=int(HTTPStatus.TOO_MANY_REQUESTS))
 
-    normalized = _normalize_event_id(event_id)
-    if event_id is not None and normalized is None:
-        return JSONResponse({"error": "Invalid event_id format"}, status_code=int(HTTPStatus.BAD_REQUEST))
+    normalized_slug = _normalize_workspace_slug(workspace_slug)
+    if workspace_slug is not None and normalized_slug is None:
+        return JSONResponse({"error": "Invalid workspace slug"}, status_code=int(HTTPStatus.BAD_REQUEST))
 
-    dashboard_dir = _resolve_event_output_dir(normalized)
-    dashboard_path = dashboard_dir / "dashboard.json"
-    if not dashboard_path.exists():
+    payload = _storage.get_public_report(workspace_slug=normalized_slug, days=days)
+    if payload is None:
         return JSONResponse({"error": "Report not found"}, status_code=int(HTTPStatus.NOT_FOUND))
-
-    full_data = json.loads(dashboard_path.read_text(encoding="utf-8"))
-    public_payload = {
-        "metrics": full_data.get("metrics"),
-        "processor_summary": full_data.get("processor_summary", []),
-        "generated_at": full_data.get("generated_at"),
-        "anomaly_count": len(full_data.get("discrepancies", [])),
-        "top_anomaly": full_data.get("discrepancies", [{}])[0].get("discrepancy_type", "None")
-        if full_data.get("discrepancies")
-        else "None",
-    }
-    return public_payload
-
-
-@app.get("/report/{event_id}")
-def report_card(event_id: str):
-    # Just serve the static report page; it calls /api/public/report?event_id=...
-    path = WEB_DIR / "report.html"
-    if not path.exists():
-        raise HTTPException(status_code=int(HTTPStatus.NOT_FOUND), detail="Missing report.html")
-    return FileResponse(path)
-
+    return payload

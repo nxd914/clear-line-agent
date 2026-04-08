@@ -11,42 +11,42 @@ Normalizer = Callable[[Path], pd.DataFrame]
 
 
 LEDGER_COLUMNS = [
-    "transaction_id",
-    "transaction_at",
+    "event_id",
+    "event_at",
     "business_date",
     "processor",
-    "venue_area",
-    "terminal_id",
-    "reference_id",
-    "auth_code",
-    "tender_type",
-    "transaction_type",
+    "agent_context",
+    "session_id",
+    "action_id",
+    "auth_key",
+    "model_id",
+    "action_type",
     "amount",
-    "settlement_status",
-    "batch_id",
+    "action_status",
+    "deployment_id",
     "source_file",
 ]
 
-EXPECTED_SALES_COLUMNS = [
-    "expected_group_id",
+BASELINE_COLUMNS = [
+    "baseline_group_id",
     "business_date",
     "source_system",
-    "venue_area",
+    "agent_context",
     "expected_amount",
-    "expected_transaction_count",
+    "expected_event_count",
     "source_file",
 ]
 
-EXPECTED_COMPARISON_COLUMNS = [
-    "expected_group_id",
+BASELINE_COMPARISON_COLUMNS = [
+    "baseline_group_id",
     "business_date",
     "source_system",
-    "venue_area",
+    "agent_context",
     "expected_amount",
-    "settled_amount",
+    "actual_amount",
     "variance_amount",
-    "expected_transaction_count",
-    "settled_transaction_count",
+    "expected_event_count",
+    "actual_event_count",
     "finding_count",
 ]
 
@@ -58,45 +58,45 @@ REVIEWED_LEDGER_COLUMNS = LEDGER_COLUMNS + [
 
 DISCREPANCY_COLUMNS = [
     "record_type",
-    "transaction_id",
-    "transaction_at",
+    "event_id",
+    "event_at",
     "business_date",
     "processor",
     "source_system",
-    "venue_area",
-    "terminal_id",
-    "reference_id",
-    "transaction_type",
+    "agent_context",
+    "session_id",
+    "action_id",
+    "action_type",
     "amount",
-    "settlement_status",
-    "auth_code",
+    "action_status",
+    "auth_key",
     "expected_amount",
-    "settled_amount",
+    "actual_amount",
     "variance_amount",
-    "expected_transaction_count",
-    "settled_transaction_count",
+    "expected_event_count",
+    "actual_event_count",
     "discrepancy_type",
     "diagnosis",
     "recommended_action",
 ]
 
 RECENT_ACTIVITY_COLUMNS = [
-    "transaction_at",
+    "event_at",
     "business_date",
     "processor",
-    "venue_area",
-    "terminal_id",
-    "reference_id",
-    "transaction_type",
+    "agent_context",
+    "session_id",
+    "action_id",
+    "action_type",
     "amount",
-    "settlement_status",
-    "auth_code",
+    "action_status",
+    "auth_key",
     "discrepancy_count",
     "discrepancy_types",
     "recommended_actions",
 ]
 
-SETTLED_STATUSES = {"SETTLED", "CAPTURED", "CLEARED"}
+SUCCESS_STATUSES = {"COMPLETED", "SUCCESS", "DONE", "200", "OK", "RESOLVED"}
 
 
 @dataclass(frozen=True)

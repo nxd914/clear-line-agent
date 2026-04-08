@@ -2,35 +2,39 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .schema import DISCREPANCY_COLUMNS, REVIEWED_LEDGER_COLUMNS, SETTLED_STATUSES
+from .schema import DISCREPANCY_COLUMNS, REVIEWED_LEDGER_COLUMNS, SUCCESS_STATUSES
 
+
+KNOWN_ACTION_TYPES = {
+    "ACTION", "AGENT_RESPONSE", "CHAIN_STEP", "chat.completion",
+    "tool_call", "tool_result", "browser", "shell", "edit", "read",
+}
 
 RULE_DEFINITIONS = (
     (
-        "Unsettled status",
-        "Confirm if this is a timing delay or a true settlement failure.",
-        lambda ledger: ~ledger["settlement_status"].isin(SETTLED_STATUSES),
+        "Failed action",
+        "Review the agent run log and identify whether the failure is transient or requires intervention.",
+        lambda ledger: ~ledger["action_status"].isin(SUCCESS_STATUSES),
     ),
     (
-        "Missing auth code",
-        "Review processor detail and verify authorization before close.",
-        lambda ledger: ledger["processor"].isin(["Shift4", "FreedomPay"])
-        & ledger["auth_code"].astype(str).str.strip().eq(""),
+        "Missing auth key",
+        "Verify the API key is set in the agent's environment and has not been rotated or revoked.",
+        lambda ledger: ledger["auth_key"].astype(str).str.strip().eq(""),
     ),
     (
-        "Refund requires offset review",
-        "Match this refund against the original sale and settlement batch.",
-        lambda ledger: ledger["transaction_type"].eq("REFUND"),
+        "Anomalous action type",
+        "Review this action type against known platform action types and confirm it is expected behavior.",
+        lambda ledger: ~ledger["action_type"].isin(KNOWN_ACTION_TYPES),
     ),
     (
-        "Duplicate reference",
-        "Check for duplicate export rows or double settlement.",
-        lambda ledger: ledger.duplicated(subset=["processor", "reference_id"], keep=False),
+        "Duplicate action",
+        "Check for duplicate export rows or runaway loop behavior in this session.",
+        lambda ledger: ledger.duplicated(subset=["processor", "action_id"], keep=False),
     ),
     (
-        "High-value review",
-        "Large transaction. Validate amount and batch before close.",
-        lambda ledger: ledger["amount"].abs().ge(1000),
+        "High-cost call",
+        "Large single-call cost. Validate model selection and prompt length before next run.",
+        lambda ledger: ledger["amount"].abs().ge(2.0),
     ),
 )
 
@@ -46,27 +50,27 @@ def build_discrepancy_table(ledger: pd.DataFrame) -> pd.DataFrame:
         finding_rows = ledger.loc[
             mask,
             [
-                "transaction_id",
-                "transaction_at",
+                "event_id",
+                "event_at",
                 "business_date",
                 "processor",
-                "venue_area",
-                "terminal_id",
-                "reference_id",
-                "transaction_type",
+                "agent_context",
+                "session_id",
+                "action_id",
+                "action_type",
                 "amount",
-                "settlement_status",
-                "auth_code",
+                "action_status",
+                "auth_key",
             ],
         ].copy()
-        finding_rows["record_type"] = "transaction"
+        finding_rows["record_type"] = "event"
         finding_rows["rule_order"] = rule_order
         finding_rows["source_system"] = ""
         finding_rows["expected_amount"] = pd.NA
-        finding_rows["settled_amount"] = pd.NA
+        finding_rows["actual_amount"] = pd.NA
         finding_rows["variance_amount"] = pd.NA
-        finding_rows["expected_transaction_count"] = pd.NA
-        finding_rows["settled_transaction_count"] = pd.NA
+        finding_rows["expected_event_count"] = pd.NA
+        finding_rows["actual_event_count"] = pd.NA
         finding_rows["discrepancy_type"] = discrepancy_type
         finding_rows["diagnosis"] = ""
         finding_rows["recommended_action"] = recommended_action
@@ -77,7 +81,7 @@ def build_discrepancy_table(ledger: pd.DataFrame) -> pd.DataFrame:
 
     discrepancies = pd.concat(findings, ignore_index=True)
     discrepancies = discrepancies.sort_values(
-        ["transaction_at", "processor", "reference_id", "rule_order"],
+        ["event_at", "processor", "action_id", "rule_order"],
         kind="mergesort",
     ).reset_index(drop=True)
     discrepancies = discrepancies.drop(columns=["rule_order"])
@@ -93,7 +97,7 @@ def build_reviewed_ledger(ledger: pd.DataFrame, discrepancies: pd.DataFrame) -> 
         return reviewed.loc[:, REVIEWED_LEDGER_COLUMNS]
 
     aggregated = (
-        discrepancies.groupby("transaction_id", sort=False)
+        discrepancies.groupby("event_id", sort=False)
         .agg(
             discrepancy_count=("discrepancy_type", "count"),
             discrepancy_types=("discrepancy_type", _join_distinct),
@@ -101,7 +105,7 @@ def build_reviewed_ledger(ledger: pd.DataFrame, discrepancies: pd.DataFrame) -> 
         )
         .reset_index()
     )
-    reviewed = reviewed.merge(aggregated, on="transaction_id", how="left")
+    reviewed = reviewed.merge(aggregated, on="event_id", how="left")
     reviewed["discrepancy_count"] = reviewed["discrepancy_count"].fillna(0).astype(int)
     reviewed["discrepancy_types"] = reviewed["discrepancy_types"].fillna("")
     reviewed["recommended_actions"] = reviewed["recommended_actions"].fillna("")

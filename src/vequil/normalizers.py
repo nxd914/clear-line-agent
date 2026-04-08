@@ -10,15 +10,15 @@ from .settings import ProcessorConfig, get_processor_config, load_processor_conf
 
 
 NORMALIZED_FIELDS = (
-    "venue_area",
-    "terminal_id",
-    "reference_id",
-    "auth_code",
-    "tender_type",
-    "transaction_type",
+    "agent_context",
+    "session_id",
+    "action_id",
+    "auth_key",
+    "model_id",
+    "action_type",
     "amount",
-    "settlement_status",
-    "batch_id",
+    "action_status",
+    "deployment_id",
 )
 
 
@@ -59,10 +59,10 @@ def _build_timestamp(df: pd.DataFrame, processor_config: ProcessorConfig) -> pd.
 
 def normalize_processor(path: Path, processor_config: ProcessorConfig) -> pd.DataFrame:
     df = _read_csv(path, processor_config)
-    transaction_at = _build_timestamp(df, processor_config)
+    event_at = _build_timestamp(df, processor_config)
     normalized: dict[str, object] = {
-        "transaction_at": transaction_at,
-        "business_date": transaction_at.dt.strftime("%Y-%m-%d"),
+        "event_at": event_at,
+        "business_date": event_at.dt.strftime("%Y-%m-%d"),
         "processor": processor_config.name,
         "source_file": path.name,
     }
@@ -80,10 +80,9 @@ def normalize_processor(path: Path, processor_config: ProcessorConfig) -> pd.Dat
             if processor_config.amount_format == "currency" or (
                 isinstance(value.iloc[0], str) and ("$" in value.iloc[0] or "," in value.iloc[0])
             ):
-                # Handle cases like "$1,234.56"
                 value = value.astype(str).str.replace(r"[$,]", "", regex=True)
             normalized[field] = pd.Series(value, index=df.index).astype(float)
-        elif field == "auth_code":
+        elif field == "auth_key":
             normalized[field] = pd.Series(value, index=df.index).fillna("").astype(str)
         else:
             normalized[field] = value
@@ -91,16 +90,20 @@ def normalize_processor(path: Path, processor_config: ProcessorConfig) -> pd.Dat
     return pd.DataFrame(normalized).loc[:, LEDGER_COLUMNS[1:]]
 
 
-def normalize_shift4(path: Path) -> pd.DataFrame:
-    return normalize_processor(path, get_processor_config("Shift4"))
+def normalize_openclaw(path: Path) -> pd.DataFrame:
+    return normalize_processor(path, get_processor_config("OpenClaw"))
 
 
-def normalize_freedompay(path: Path) -> pd.DataFrame:
-    return normalize_processor(path, get_processor_config("FreedomPay"))
+def normalize_claude(path: Path) -> pd.DataFrame:
+    return normalize_processor(path, get_processor_config("Claude"))
 
 
-def normalize_amazon(path: Path) -> pd.DataFrame:
-    return normalize_processor(path, get_processor_config("Amazon JWO"))
+def normalize_langchain(path: Path) -> pd.DataFrame:
+    return normalize_processor(path, get_processor_config("LangChain"))
+
+
+def normalize_openai(path: Path) -> pd.DataFrame:
+    return normalize_processor(path, get_processor_config("OpenAI"))
 
 
 def generate_unified_ledger(
@@ -114,6 +117,6 @@ def generate_unified_ledger(
     ]
     ledger = pd.concat(frames, ignore_index=True)
     ledger["amount"] = ledger["amount"].astype(float).round(2)
-    ledger = ledger.sort_values(["transaction_at", "processor", "reference_id"]).reset_index(drop=True)
-    ledger.insert(0, "transaction_id", [f"txn-{index:05d}" for index in range(1, len(ledger) + 1)])
+    ledger = ledger.sort_values(["event_at", "processor", "action_id"]).reset_index(drop=True)
+    ledger.insert(0, "event_id", [f"evt-{index:05d}" for index in range(1, len(ledger) + 1)])
     return ledger.loc[:, LEDGER_COLUMNS]

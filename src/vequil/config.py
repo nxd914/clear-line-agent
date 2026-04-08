@@ -10,11 +10,13 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = ROOT / "configs"
+DATA_DIR = ROOT / "data"
 RAW_DATA_DIR = ROOT / "data" / "raw"
 OUTPUT_DIR = ROOT / "data" / "output"
 WEB_DIR = ROOT / "web" / "static"
+
 PROCESSORS_CONFIG_PATH = CONFIG_DIR / "processors.json"
-EXPECTED_SALES_CONFIG_PATH = CONFIG_DIR / "expected_sales.json"
+BASELINE_CONFIG_PATH = CONFIG_DIR / "baseline.json"
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
