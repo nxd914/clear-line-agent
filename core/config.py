@@ -165,6 +165,13 @@ class Config:
     min_confidence: float = 0.55
     # Minimum confidence to propagate a signal downstream.
 
+    # ── Performance metrics ─────────────────────────────────────────────────
+    assumed_fills_per_day: int = 4
+    # Conservative baseline for Sharpe annualization in _running_sharpe().
+    # One fill every ~6 hours during active trading hours. Update from live
+    # data once fill cadence stabilizes — the Sharpe estimate is sensitive to
+    # this assumption at low sample counts.
+
     # ── Live mode gate ──────────────────────────────────────────────────────
     min_fills_for_live: int = 100
     # Minimum resolved paper fills before live mode is permitted.
@@ -207,6 +214,7 @@ class Config:
             max_no_fill_price=_float("MAX_NO_FILL_PRICE", base.max_no_fill_price),
             consecutive_loss_pause_fills=_int("CONSECUTIVE_LOSS_PAUSE_FILLS", base.consecutive_loss_pause_fills),
             scan_interval_seconds=_int("SCAN_INTERVAL_SECONDS", base.scan_interval_seconds),
+            assumed_fills_per_day=_int("ASSUMED_FILLS_PER_DAY", base.assumed_fills_per_day),
             min_fills_for_live=_int("MIN_FILLS_FOR_LIVE", base.min_fills_for_live),
             min_sharpe_for_live=_float("MIN_SHARPE_FOR_LIVE", base.min_sharpe_for_live),
         )

@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from ..core.config import Config, DEFAULT_CONFIG
 from ..core.kalshi_client import KalshiClient
 from .risk_agent import _ticker_to_symbol
 
@@ -55,10 +56,12 @@ class ResolutionAgent:
         risk_agent,                          # RiskAgent — typed weakly to avoid circular import
         db_path: Path = DB_PATH,
         poll_interval: int = POLL_INTERVAL_SECONDS,
+        config: Config = DEFAULT_CONFIG,
     ) -> None:
         self._risk = risk_agent
         self._db_path = db_path
         self._poll_interval = poll_interval
+        self._cfg = config
         self._client = KalshiClient()
         self._db: Optional[sqlite3.Connection] = None
         # In-memory guard against double-firing timeout resolutions when the DB write fails.
@@ -94,23 +97,20 @@ class ResolutionAgent:
     # ------------------------------------------------------------------
 
     def _sync_risk_positions(self) -> None:
-        """Re-populate RiskAgent._open_positions, _positions_by_symbol, and _daily_pnl from DB on startup."""
+        """Re-populate RiskAgent state from DB on startup so slots and circuit breakers survive restarts."""
         rows = self._load_open_rows()
         for row in rows:
-            self._risk._open_positions[row.ticker] = row.size_usdc
-            symbol = _ticker_to_symbol(row.ticker)
-            self._risk._positions_by_symbol.setdefault(symbol, set()).add(row.ticker)
+            self._risk.restore_position(row.ticker, row.size_usdc)
         if rows:
             logger.info(
-                "ResolutionAgent: synced %d open positions into RiskAgent from DB (%s)",
+                "ResolutionAgent: synced %d open positions into RiskAgent from DB",
                 len(rows),
-                {k: len(v) for k, v in self._risk._positions_by_symbol.items()},
             )
 
         # Rehydrate today's realized P&L so the circuit breaker survives restarts
         daily_pnl = self._load_daily_pnl()
         if daily_pnl != 0.0:
-            self._risk._daily_pnl = daily_pnl
+            self._risk.restore_daily_pnl(daily_pnl)
             logger.info("ResolutionAgent: rehydrated daily P&L = $%.2f", daily_pnl)
 
     # ------------------------------------------------------------------
@@ -226,9 +226,7 @@ class ResolutionAgent:
         if std == 0.0:
             return float("inf") if mean > 0 else 0.0
 
-        # Per-fill Sharpe; annualize assuming ~4 fills/day (empirical; update from data)
-        ASSUMED_FILLS_PER_DAY = 4
-        annualization = math.sqrt(ASSUMED_FILLS_PER_DAY * 365)
+        annualization = math.sqrt(self._cfg.assumed_fills_per_day * 365)
         return (mean / std) * annualization
 
     def get_metrics_snapshot(self) -> dict:

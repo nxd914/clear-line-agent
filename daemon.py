@@ -51,6 +51,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 BANKROLL_USDC = float(os.environ.get("BANKROLL_USDC", "100000.0"))
+TRACKED_SYMBOLS: list[str] = os.environ.get("TRACKED_SYMBOLS", "BTC,ETH").split(",")
+_SHUTDOWN_TIMEOUT_SECONDS = 10.0
 
 
 async def main() -> None:
@@ -75,7 +77,7 @@ async def main() -> None:
     approved_queue: asyncio.Queue[tuple[TradeOpportunity, float]] = asyncio.Queue(maxsize=50)
 
     # Agents
-    crypto_feed = CryptoFeedAgent(tick_queue=tick_queue, symbols=["BTC", "ETH"])
+    crypto_feed = CryptoFeedAgent(tick_queue=tick_queue, symbols=TRACKED_SYMBOLS)
     feature_agent = FeatureAgent(tick_queue=tick_queue, signal_queue=signal_queue)
 
     ws_agent = WebsocketAgent(
@@ -119,6 +121,14 @@ async def main() -> None:
         await asyncio.gather(*tasks)
     except asyncio.CancelledError:
         logger.info("Shutdown signal received — stopping agents.")
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=_SHUTDOWN_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            still_running = [t.get_name() for t in tasks if not t.done()]
+            logger.warning("Shutdown timed out after %.0fs — tasks still running: %s", _SHUTDOWN_TIMEOUT_SECONDS, still_running)
 
 
 if __name__ == "__main__":

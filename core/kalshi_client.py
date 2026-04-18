@@ -376,7 +376,7 @@ class KalshiClient:
                         )
                         return {}
                     return await resp.json()
-            except (aiohttp.ClientError, Exception) as exc:
+            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
                 logger.warning("Kalshi GET %s transport error: %s", path, exc)
                 return {}
 
@@ -391,7 +391,7 @@ class KalshiClient:
         try:
             async with self._session.post(url, headers=headers, json=payload) as resp:
                 return await resp.json()
-        except (aiohttp.ClientError, Exception) as exc:
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
             logger.debug("Kalshi POST error %s: %s", path, exc)
             return {}
 
@@ -405,7 +405,7 @@ class KalshiClient:
         try:
             async with self._session.delete(url, headers=headers) as resp:
                 return await resp.json()
-        except (aiohttp.ClientError, Exception) as exc:
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
             logger.debug("Kalshi DELETE error %s: %s", path, exc)
             return {}
 
@@ -602,6 +602,6 @@ def _load_rsa_key(path: Path) -> Optional[RSAPrivateKey]:
     except FileNotFoundError:
         logger.warning("Kalshi private key not found at %s", path)
         return None
-    except Exception as exc:
+    except (OSError, ValueError) as exc:
         logger.warning("Failed to load Kalshi private key from %s: %s", path, exc)
         return None

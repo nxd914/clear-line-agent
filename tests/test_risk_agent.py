@@ -12,17 +12,8 @@ import asyncio
 import pytest
 from datetime import datetime, timedelta, timezone
 
-from chiron.agents.risk_agent import (
-    MAX_CONCURRENT_POSITIONS,
-    MAX_DAILY_LOSS_PCT,
-    MAX_NO_FILL_PRICE,
-    MAX_POSITIONS_PER_SYMBOL,
-    MAX_SIGNAL_AGE_SECONDS,
-    MIN_NO_FILL_PRICE,
-    MIN_SECONDS_BETWEEN_FILLS,
-    MIN_SPREAD_PCT,
-    RiskAgent,
-)
+from chiron.agents.risk_agent import RiskAgent
+from chiron.core.config import DEFAULT_CONFIG
 from chiron.core.models import (
     FeatureVector,
     KalshiMarket,
@@ -37,7 +28,7 @@ from chiron.core.models import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_opp(ticker: str, spread: float = MIN_SPREAD_PCT + 0.01, edge: float = 0.1) -> TradeOpportunity:
+def _make_opp(ticker: str, spread: float = DEFAULT_CONFIG.min_spread_pct + 0.01, edge: float = 0.1) -> TradeOpportunity:
     mid = 0.50
     half = spread / 2
     market = KalshiMarket(
@@ -81,15 +72,15 @@ def _make_agent() -> RiskAgent:
 async def test_spread_floor_rejects_tight_spread():
     """Spreads below MIN_SPREAD_PCT must always be rejected (Kalshi fee protection)."""
     agent = _make_agent()
-    bad = _make_opp("TIGHT", spread=MIN_SPREAD_PCT - 0.005)
+    bad = _make_opp("TIGHT", spread=DEFAULT_CONFIG.min_spread_pct - 0.005)
     assert agent._evaluate(bad) is None
 
 
 @pytest.mark.asyncio
 async def test_spread_floor_approves_sufficient_spread():
-    """Spreads at or above MIN_SPREAD_PCT should pass the gate."""
+    """Spreads at or above DEFAULT_CONFIG.min_spread_pct should pass the gate."""
     agent = _make_agent()
-    good = _make_opp("WIDE", spread=MIN_SPREAD_PCT + 0.01)
+    good = _make_opp("WIDE", spread=DEFAULT_CONFIG.min_spread_pct + 0.01)
     result = agent._evaluate(good)
     assert result is not None
     assert result[0].market.ticker == "WIDE"
@@ -107,10 +98,10 @@ async def test_concurrent_position_limit():
     isn't what trips — this test isolates the count limit.
     """
     agent = _make_agent()
-    for i in range(MAX_CONCURRENT_POSITIONS):
+    for i in range(DEFAULT_CONFIG.max_concurrent_positions):
         agent._open_positions[f"MKT{i}"] = 1.0  # minimal exposure, isolates count behavior
 
-    assert len(agent._open_positions) == MAX_CONCURRENT_POSITIONS
+    assert len(agent._open_positions) == DEFAULT_CONFIG.max_concurrent_positions
 
     extra = _make_opp("EXTRA")
     assert agent._evaluate(extra) is None
@@ -133,7 +124,7 @@ async def test_duplicate_ticker_rejected():
 async def test_circuit_breaker_halts_on_loss():
     """A single loss exceeding bankroll * MAX_DAILY_LOSS_PCT must trigger the halt flag."""
     agent = _make_agent()
-    daily_loss_limit = 500.0 * MAX_DAILY_LOSS_PCT  # $100 at $500 bankroll
+    daily_loss_limit = 500.0 * DEFAULT_CONFIG.max_daily_loss_pct  # $100 at $500 bankroll
     agent.record_fill("X", -(daily_loss_limit + 1.0))
     assert agent._halted is True
 
@@ -142,7 +133,7 @@ async def test_circuit_breaker_halts_on_loss():
 async def test_circuit_breaker_blocks_new_trades():
     """Once halted, no new opportunities get approved."""
     agent = _make_agent()
-    daily_loss_limit = 500.0 * MAX_DAILY_LOSS_PCT  # $100 at $500 bankroll
+    daily_loss_limit = 500.0 * DEFAULT_CONFIG.max_daily_loss_pct  # $100 at $500 bankroll
     agent.record_fill("X", -(daily_loss_limit + 1.0))
 
     opp = _make_opp("NEW")
@@ -187,11 +178,11 @@ async def test_record_fill_reopens_slot_for_new_trade():
     """After a fill frees a slot, a new trade in that ticker should be approvable."""
     agent = _make_agent()
     # Fill up all slots with minimal exposure (isolates slot-recycling from exposure gate)
-    for i in range(MAX_CONCURRENT_POSITIONS):
+    for i in range(DEFAULT_CONFIG.max_concurrent_positions):
         agent._open_positions[f"S{i}"] = 1.0
 
     agent.record_fill("S0", 0.0)
-    assert len(agent._open_positions) == MAX_CONCURRENT_POSITIONS - 1
+    assert len(agent._open_positions) == DEFAULT_CONFIG.max_concurrent_positions - 1
 
     new_opp = _make_opp("SNEW")
     assert agent._evaluate(new_opp) is not None
@@ -217,7 +208,7 @@ async def test_cooldown_allows_after_interval():
     assert agent._evaluate(_make_opp("FIRST")) is not None
     # Simulate time passing beyond cooldown
     agent._last_fill_time = datetime.now(tz=timezone.utc) - timedelta(
-        seconds=MIN_SECONDS_BETWEEN_FILLS + 1
+        seconds=DEFAULT_CONFIG.min_seconds_between_fills + 1
     )
     assert agent._evaluate(_make_opp("SECOND")) is not None
 
@@ -231,7 +222,7 @@ async def test_symbol_concentration_limit():
     """Cannot exceed MAX_POSITIONS_PER_SYMBOL open positions per crypto symbol."""
     agent = _make_agent()
     # Pre-load ETH positions at the symbol cap with minimal exposure (isolates symbol gate)
-    for i in range(MAX_POSITIONS_PER_SYMBOL):
+    for i in range(DEFAULT_CONFIG.max_positions_per_symbol):
         ticker = f"KXETH-SERIES-{i}"
         agent._open_positions[ticker] = 1.0
         agent._positions_by_symbol.setdefault("ETH", set()).add(ticker)
@@ -255,7 +246,7 @@ async def test_stale_signal_rejected():
     agent = _make_agent()
     # Create opportunity with a signal timestamped 10 seconds ago
     opp = _make_opp("KXBTC-FRESH")
-    old_timestamp = datetime.now(tz=timezone.utc) - timedelta(seconds=10)
+    old_timestamp = datetime.now(tz=timezone.utc) - timedelta(seconds=DEFAULT_CONFIG.max_signal_age_seconds + 5)
     stale_signal = Signal(
         signal_type=opp.signal.signal_type,
         symbol=opp.signal.symbol,
@@ -350,7 +341,7 @@ async def test_record_fill_releases_pending_exposure():
 
 def _make_no_opp(ticker: str, no_ask: float) -> TradeOpportunity:
     """Build a NO-side opportunity with a specific no_ask price."""
-    spread = MIN_SPREAD_PCT + 0.01
+    spread = DEFAULT_CONFIG.min_spread_pct + 0.01
     mid = 0.50
     half = spread / 2
     market = KalshiMarket(
@@ -386,7 +377,7 @@ def _make_no_opp(ticker: str, no_ask: float) -> TradeOpportunity:
 async def test_no_price_floor_rejects_cheap_no():
     """NO bets below MIN_NO_FILL_PRICE are rejected (bad payout ratio)."""
     agent = _make_agent()
-    opp = _make_no_opp("KXBTC-CHEAP", no_ask=MIN_NO_FILL_PRICE - 0.01)
+    opp = _make_no_opp("KXBTC-CHEAP", no_ask=DEFAULT_CONFIG.min_no_fill_price - 0.01)
     assert agent._evaluate(opp) is None
 
 
@@ -394,14 +385,14 @@ async def test_no_price_floor_rejects_cheap_no():
 async def test_no_price_cap_rejects_expensive_no():
     """NO bets above MAX_NO_FILL_PRICE are rejected (inverted risk/reward — risking $7k+ to win $3k or less)."""
     agent = _make_agent()
-    opp = _make_no_opp("KXBTC-PRICEY", no_ask=MAX_NO_FILL_PRICE + 0.01)
+    opp = _make_no_opp("KXBTC-PRICEY", no_ask=DEFAULT_CONFIG.max_no_fill_price + 0.01)
     assert agent._evaluate(opp) is None
 
 
 @pytest.mark.asyncio
 async def test_no_price_within_band_passes():
-    """NO bets inside [MIN_NO_FILL_PRICE, MAX_NO_FILL_PRICE] should pass the price gate."""
+    """NO bets inside [min_no_fill_price, max_no_fill_price] should pass the price gate."""
     agent = _make_agent()
-    mid_price = (MIN_NO_FILL_PRICE + MAX_NO_FILL_PRICE) / 2
+    mid_price = (DEFAULT_CONFIG.min_no_fill_price + DEFAULT_CONFIG.max_no_fill_price) / 2
     opp = _make_no_opp("KXBTC-OK", no_ask=mid_price)
     assert agent._evaluate(opp) is not None

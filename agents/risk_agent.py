@@ -21,21 +21,9 @@ from typing import Optional
 
 from ..core.config import Config, DEFAULT_CONFIG
 from ..core.kelly import position_size
-from ..core.models import TradeOpportunity
+from ..core.models import Side, TradeOpportunity
 
 logger = logging.getLogger(__name__)
-
-# Module-level defaults kept for backwards compatibility with tests.
-# Authoritative values live in core/config.py.
-MAX_CONCURRENT_POSITIONS = DEFAULT_CONFIG.max_concurrent_positions
-MAX_DAILY_LOSS_PCT = DEFAULT_CONFIG.max_daily_loss_pct
-MAX_SINGLE_EXPOSURE_PCT = DEFAULT_CONFIG.max_single_exposure_pct
-MIN_SPREAD_PCT = DEFAULT_CONFIG.min_spread_pct
-MIN_SECONDS_BETWEEN_FILLS = DEFAULT_CONFIG.min_seconds_between_fills
-MAX_POSITIONS_PER_SYMBOL = DEFAULT_CONFIG.max_positions_per_symbol
-MAX_SIGNAL_AGE_SECONDS = DEFAULT_CONFIG.max_signal_age_seconds
-MIN_NO_FILL_PRICE = DEFAULT_CONFIG.min_no_fill_price
-MAX_NO_FILL_PRICE = DEFAULT_CONFIG.max_no_fill_price
 
 
 class RiskAgent:
@@ -76,6 +64,16 @@ class RiskAgent:
             result = self._evaluate(opp)
             if result is not None:
                 await self._approved.put(result)
+
+    def restore_position(self, ticker: str, size: float) -> None:
+        """Re-register an open position from persistent storage after a process restart."""
+        self._open_positions[ticker] = size
+        symbol = _ticker_to_symbol(ticker)
+        self._positions_by_symbol.setdefault(symbol, set()).add(ticker)
+
+    def restore_daily_pnl(self, amount: float) -> None:
+        """Restore today's realized P&L from persistent storage after a process restart."""
+        self._daily_pnl = amount
 
     def record_fill(self, ticker: str, pnl: float) -> None:
         """Call when a position resolves. Updates daily P&L and removes from open set."""
@@ -176,16 +174,16 @@ class RiskAgent:
             )
             return None
 
-        market_price = opp.market.yes_ask if opp.side.value == "YES" else opp.market.no_ask
+        market_price = opp.market.yes_ask if opp.side == Side.YES else opp.market.no_ask
 
         # NO fill price band
-        if opp.side.value == "NO" and market_price < self._cfg.min_no_fill_price:
+        if opp.side == Side.NO and market_price < self._cfg.min_no_fill_price:
             logger.info(
                 "RISK REJECT no_price_too_low: %s | no_ask=%.3f < %.2f floor",
                 opp.market.ticker, market_price, self._cfg.min_no_fill_price,
             )
             return None
-        if opp.side.value == "NO" and market_price > self._cfg.max_no_fill_price:
+        if opp.side == Side.NO and market_price > self._cfg.max_no_fill_price:
             logger.info(
                 "RISK REJECT no_price_too_high: %s | no_ask=%.3f > %.2f cap",
                 opp.market.ticker, market_price, self._cfg.max_no_fill_price,
@@ -205,7 +203,7 @@ class RiskAgent:
         # Scale NO position size proportionally to fill price.
         # At NO price=0.50 → max $5k instead of $10k. This makes
         # dollar-at-risk proportional to the payout ratio.
-        if opp.side.value == "NO":
+        if opp.side == Side.NO:
             max_no_size = max_by_exposure * market_price
             size = min(size, max_no_size)
 
