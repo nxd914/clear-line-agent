@@ -1,0 +1,125 @@
+"""
+Main orchestrator — wires all agents together and runs the event loop.
+
+Usage:
+  EXECUTION_MODE=paper python3 daemon.py
+
+Environment variables:
+  EXECUTION_MODE    paper (default) | live
+  BANKROLL_USDC     starting bankroll (default: 100000.0)
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import signal
+from pathlib import Path
+
+
+def _load_project_dotenv() -> None:
+    """Load `.env` from repo root so the daemon sees API keys without manual export."""
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    repo_root = Path(__file__).resolve().parent
+    env_path = repo_root / ".env"
+    if env_path.is_file():
+        load_dotenv(env_path, override=False)
+    load_dotenv(override=False)
+
+
+_load_project_dotenv()
+
+from chiron.agents import (  # noqa: E402
+    CryptoFeedAgent,
+    ExecutionAgent,
+    FeatureAgent,
+    ResolutionAgent,
+    RiskAgent,
+    ScannerAgent,
+    WebsocketAgent,
+)
+from chiron.core.models import Signal, Tick, TradeOpportunity  # noqa: E402
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)s %(levelname)s %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+BANKROLL_USDC = float(os.environ.get("BANKROLL_USDC", "100000.0"))
+
+
+async def main() -> None:
+    if os.environ.get("KALSHI_API_KEY", "").strip():
+        logger.info("Kalshi API key present in environment (RSA PEM path must also be set for signing).")
+    else:
+        logger.warning(
+            "KALSHI_API_KEY not set after dotenv load — Kalshi client runs unauthenticated; "
+            "place a .env at the repo root (see CLAUDE.md)."
+        )
+
+    logger.info(
+        "Starting in %s mode | bankroll=%.2f USDC",
+        os.environ.get("EXECUTION_MODE", "paper").upper(),
+        BANKROLL_USDC,
+    )
+
+    # Queues
+    tick_queue: asyncio.Queue[Tick] = asyncio.Queue(maxsize=5000)
+    signal_queue: asyncio.Queue[Signal] = asyncio.Queue(maxsize=200)
+    scanner_out_queue: asyncio.Queue[TradeOpportunity] = asyncio.Queue(maxsize=100)
+    approved_queue: asyncio.Queue[tuple[TradeOpportunity, float]] = asyncio.Queue(maxsize=50)
+
+    # Agents
+    crypto_feed = CryptoFeedAgent(tick_queue=tick_queue, symbols=["BTC", "ETH"])
+    feature_agent = FeatureAgent(tick_queue=tick_queue, signal_queue=signal_queue)
+
+    ws_agent = WebsocketAgent(
+        api_key=os.environ.get("KALSHI_API_KEY", ""),
+        private_key_path=os.environ.get("KALSHI_PRIVATE_KEY_PATH", ""),
+    )
+    scanner = ScannerAgent(
+        signal_queue=signal_queue,
+        opportunity_queue=scanner_out_queue,
+        bankroll_usdc=BANKROLL_USDC,
+        price_cache=ws_agent.price_cache,
+        crypto_features=feature_agent.latest_features,
+    )
+    risk = RiskAgent(
+        opportunity_queue=scanner_out_queue,
+        approved_queue=approved_queue,
+        bankroll_usdc=BANKROLL_USDC,
+    )
+    execution = ExecutionAgent(
+        approved_queue=approved_queue,
+        risk_agent=risk,
+    )
+    resolver = ResolutionAgent(risk_agent=risk)
+
+    tasks = [
+        asyncio.create_task(crypto_feed.run(), name="crypto_feed"),
+        asyncio.create_task(feature_agent.run(), name="features"),
+        asyncio.create_task(ws_agent.run(), name="kalshi_ws"),
+        asyncio.create_task(scanner.run(), name="scanner"),
+        asyncio.create_task(risk.run(), name="risk"),
+        asyncio.create_task(execution.run(), name="execution"),
+        asyncio.create_task(resolver.run(), name="resolver"),
+    ]
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, lambda: [t.cancel() for t in tasks])
+
+    logger.info("All agents running (%d tasks). Press Ctrl+C to stop.", len(tasks))
+    try:
+        await asyncio.gather(*tasks)
+    except asyncio.CancelledError:
+        logger.info("Shutdown signal received — stopping agents.")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

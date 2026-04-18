@@ -1,5 +1,4 @@
 # Secrets
-aws/
 .env
 
 # Python
@@ -11,10 +10,16 @@ dist/
 build/
 
 # Runtime data
-data/paper_fund.log*
-data/paper_fund.pid
-data/paper_trades.db
-data/kalshi_orderbooks.db
+chiron/data/paper_fund.log*
+chiron/data/paper_fund.pid
+chiron/data/paper_trades.db
+chiron/data/kalshi_orderbooks.db
+chiron/data/paper_trades_v*.db
+chiron/data/paper_trades_100k_backup_*.db
+papertrades.db
+
+# Stale artifact directories
+chiron/base/
 
 # Testing
 .pytest_cache/
@@ -23,6 +28,9 @@ data/kalshi_orderbooks.db
 .vscode/
 .idea/
 .DS_Store
+
+# Claude local settings
+.claude/
 
 # Personal PDF stash — unrelated to this project, stored here for convenience
 /_pdfs/

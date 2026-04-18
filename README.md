@@ -1,13 +1,35 @@
+# chiron
+
 [![Python](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![Kalshi](https://img.shields.io/badge/exchange-Kalshi-0a1628.svg)](https://kalshi.com)
 [![Status](https://img.shields.io/badge/status-paper_trading-yellow.svg)](#usage)
-[![Tests](https://img.shields.io/badge/tests-pytest-009688.svg?logo=pytest&logoColor=white)](./tests)
-[![Internal](https://img.shields.io/badge/repo-internal-red.svg)](https://github.com/nxd914/quant)
+[![Tests](https://img.shields.io/badge/tests-pytest-009688.svg?logo=pytest&logoColor=white)](./chiron/tests)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-Internal automated trading system on Kalshi (CFTC-regulated binary prediction markets).
-Edge: crypto spot-price propagation latency between global CEX feeds (Binance.US / Coinbase) and Kalshi BTC/ETH probability contracts. Deterministic Black-Scholes N(d2) pricing, Kelly-capped sizing, zero learned parameters in the execution path.
+Automated BTC/ETH arbitrage for [Kalshi](https://kalshi.com) prediction markets.
 
-> Source: [github.com/nxd914/quant](https://github.com/nxd914/quant)
+**Edge**: crypto spot-price propagation latency between global CEX feeds (Binance.US / Coinbase) and Kalshi BTC/ETH probability contracts. Deterministic Black-Scholes N(d2) pricing, Kelly-capped sizing, zero learned parameters in the execution path.
+
+> Paper mode only. Not financial advice.
+
+## Quick start
+
+```bash
+pip install chiron
+
+mkdir -p ~/.chiron
+openssl genrsa -out ~/.chiron/private.pem 2048
+openssl rsa -in ~/.chiron/private.pem -pubout -out ~/.chiron/public.pem
+```
+
+Set environment variables (see [Environment](#environment)), then:
+
+```bash
+chiron-daemon          # run the trading daemon
+chiron paper           # paper trade via CLI
+chiron scan            # scan current Kalshi markets
+chiron history         # view trade history
+```
 
 ## Architecture
 
@@ -22,53 +44,20 @@ ScannerAgent (N(d2) / bracket_prob scoring, edge filter)
         ↓
 RiskAgent (Kelly + position limits + proactive exposure gate)
         ↓
-ExecutionAgent (paper/live, SQLite audit trail)
+ExecutionAgent (paper mode, SQLite audit trail)
         ↓
 ResolutionAgent (settlement polling, P&L close)
 ```
-
-## Repository layout
-
-```
-agents/       Async agent loop (crypto feed, features, scanner, risk, execution, resolution)
-core/         Pure math + exchange client (kelly, pricing, kalshi_client, models, features)
-tools/        CLI + paper runner + dashboard
-research/     Offline analysis (health check, P&L dashboard, edge analysis, market scans)
-tests/        pytest suite
-scripts/      run.sh lifecycle manager, AWS setup, force_resolve
-deploy/       Dockerfile, docker-compose
-docs/         Internal notes
-data/         SQLite trade DB, logs, PID files (gitignored)
-```
-
-## Setup
-
-```bash
-pip install -r requirements.txt
-
-mkdir -p ~/.quant
-openssl genrsa -out ~/.quant/kalshi_private.pem 2048
-openssl rsa -in ~/.quant/kalshi_private.pem -pubout -out ~/.quant/kalshi_public.pem
-```
-
-Upload the public key in the Kalshi dashboard, copy the key UUID.
 
 ## Environment
 
 | Var | Required | Notes |
 |-----|----------|-------|
 | `KALSHI_API_KEY` | yes | UUID from Kalshi dashboard |
-| `KALSHI_PRIVATE_KEY_PATH` | yes | `~/.quant/kalshi_private.pem` |
-| `EXECUTION_MODE` | no | `paper` (default) / `live` |
-| `BANKROLL_USDC` | no | default `100000` |
+| `KALSHI_PRIVATE_KEY_PATH` | yes | `~/.chiron/private.pem` |
+| `BANKROLL_USDC` | no | default `5000` |
 
-## Usage
-
-```bash
-./scripts/run.sh start|stop|restart|status    # daemon lifecycle
-python3 -m quant.daemon                       # run daemon in foreground
-python3 -m research.health_check              # live P&L + process health
-```
+Create a `.env` file at the repo root or export these in your shell.
 
 ## Risk controls
 
@@ -79,10 +68,25 @@ python3 -m research.health_check              # live P&L + process health
 | Max concurrent positions | 5 |
 | Max single exposure | 10% of bankroll |
 | Max positions per symbol | 2 |
-| Daily loss gate | 20% of bankroll (proactive — pending exposure counted) |
+| Daily loss gate | 20% of bankroll |
 | Min NO fill price | 0.40 |
 | Max hours to expiry | 4 |
 | Min seconds between fills | 30 |
 | Spread floor | 4% |
-| Bracket calibration haircut | 45% |
-| Live trading gate | disabled until paper Sharpe ≥ 1.0 over 2+ weeks |
+
+## Paper results
+
+As of 2026-04-17: **8 fills, 100% win rate, +$391.73 realized P&L** on a $5,000 paper bankroll.
+
+Past paper performance is not indicative of future results.
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest chiron/tests/
+```
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
