@@ -54,7 +54,7 @@
             "email": "nxd914@gmail.com",
             "contactType": "general"
         },
-        "sameAs": ["https://github.com/nxd914/kinzie"]
+        "sameAs": []
     }
     </script>
 
@@ -143,28 +143,6 @@
 
         .nav-links a:hover {
             color: var(--navy);
-        }
-
-        .nav-github {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 13px;
-            font-weight: 500;
-            color: var(--gray-700) !important;
-            text-decoration: none;
-            transition: color 0.15s;
-        }
-
-        .nav-github:hover {
-            color: var(--navy) !important;
-        }
-
-        .nav-github svg {
-            width: 16px;
-            height: 16px;
-            fill: currentColor;
-            flex-shrink: 0;
         }
 
         /* ── Hero (Navy) ── */
@@ -963,19 +941,13 @@
             <a href="#who">Who We Are</a>
             <a href="#approach">Our Approach</a>
             <a href="#systems">Systems</a>
-            <a href="#research">Research</a>
             <a href="#contact">Get in Touch</a>
-            <a href="https://github.com/nxd914/kinzie" class="nav-github" target="_blank" rel="noopener">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
-                GitHub
-            </a>
         </div>
     </nav>
 
     <!-- Hero -->
     <section class="hero" aria-label="Introduction">
         <div class="hero-inner">
-            <p class="hero-label">Kinzie — Proprietary Trading Research</p>
             <h1>Precision at the edge<br>of information</h1>
             <p>
                 A proprietary trading research firm exploiting information propagation latency
@@ -984,10 +956,7 @@
             </p>
             <div class="hero-actions">
                 <a href="#who" class="hero-btn">Explore Our Approach</a>
-                <a href="https://github.com/nxd914/kinzie" class="hero-link" target="_blank" rel="noopener">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
-                    View source on GitHub
-                </a>
+                <a href="#contact" class="hero-btn" style="border-color:rgba(255,255,255,0.2);font-weight:400;">Get in Touch</a>
             </div>
         </div>
     </section>
@@ -1020,19 +989,19 @@
                 </p>
             </div>
             <div class="who-block">
-                <h3>Open research posture</h3>
+                <h3>Infrastructure over intuition</h3>
                 <p>
-                    The system is open source. The math is published. The derivations are documented.
-                    We believe transparency is a competitive advantage, not a liability — the edge comes
-                    from execution speed and infrastructure, not from keeping formulas secret.
+                    Edge in liquid markets is fragile. We don't rely on discretion, pattern recognition,
+                    or market intuition. The system either identifies a statistically measurable opportunity
+                    or it does nothing. Speed and precision of execution are the moat.
                 </p>
             </div>
             <div class="who-block">
                 <h3>Auditable at every layer</h3>
                 <p>
-                    Every trade is persisted to an immutable SQLite audit trail with full signal context:
-                    spot price at trigger, realized volatility, implied probability, Kelly fraction, and
-                    latency from signal to fill. No decision is opaque.
+                    Every trade is persisted to an immutable audit trail with full signal context:
+                    market conditions at trigger, model output, position size, and latency from
+                    signal to fill. No decision is opaque.
                 </p>
             </div>
         </div>
@@ -1064,25 +1033,25 @@
                 <div class="pipe-step" role="listitem">
                     <span class="pipe-num">02</span>
                     <div>
-                        <div class="pipe-name">Welford Feature Extraction</div>
-                        <div class="pipe-desc">O(1) rolling realized volatility via Welford algorithm. Two windows per
-                            symbol (60s momentum + 15min pricing). No full-scan recompute on each tick.</div>
+                        <div class="pipe-name">Real-Time Feature Extraction</div>
+                        <div class="pipe-desc">O(1) rolling realized volatility with bounded memory. Two windows per
+                            symbol. No full-scan recompute per tick — designed for sustained high-frequency ingestion.</div>
                     </div>
                 </div>
                 <div class="pipe-step" role="listitem">
                     <span class="pipe-num">03</span>
                     <div>
-                        <div class="pipe-name">Closed-Form Signal Pricing</div>
-                        <div class="pipe-desc">Black-Scholes N(d2) maps spot vs. strike to risk-neutral probability.
-                            N(d2) not N(d1) — prediction markets resolve binary, no delta-hedging possible.</div>
+                        <div class="pipe-name">Proprietary Signal Pricing</div>
+                        <div class="pipe-desc">Closed-form pricing maps spot price and realized volatility to
+                            risk-neutral contract probability. Zero learned parameters. Deterministic output on every tick.</div>
                     </div>
                 </div>
                 <div class="pipe-step" role="listitem">
                     <span class="pipe-num">04</span>
                     <div>
-                        <div class="pipe-name">Risk Agent &amp; Kelly Sizing</div>
-                        <div class="pipe-desc">Kelly-constrained position sizing with hard caps. Daily loss circuit
-                            breaker, consecutive-loss pause, signal freshness gate, and spread floor enforcement.</div>
+                        <div class="pipe-name">Risk Controls &amp; Position Sizing</div>
+                        <div class="pipe-desc">Mathematically-derived position sizing with hard capital caps. Daily loss
+                            circuit breaker, consecutive-loss pause, signal freshness gate, and spread floor enforcement.</div>
                     </div>
                 </div>
                 <div class="pipe-step" role="listitem">
@@ -1090,7 +1059,7 @@
                     <div>
                         <div class="pipe-name">Execution &amp; Audit Trail</div>
                         <div class="pipe-desc">RSA-PSS authenticated order placement. Every trade logged with full
-                            signal context — spot price, realized vol, Kelly fraction, signal latency, P&amp;L.</div>
+                            signal context — market conditions, model output, position size, and P&amp;L.</div>
                     </div>
                 </div>
             </div>
@@ -1113,17 +1082,17 @@
                 <div class="stat-cell" role="row">
                     <div class="stat-value">0.66</div>
                     <div class="stat-unit">µs per call</div>
-                    <div class="stat-label">N(d2) closed-form pricing<br>Black-Scholes implied probability</div>
+                    <div class="stat-label">Closed-form signal pricing<br>Risk-neutral contract probability</div>
                 </div>
                 <div class="stat-cell" role="row">
                     <div class="stat-value">1.5</div>
                     <div class="stat-unit">µs per call</div>
-                    <div class="stat-label">Welford O(1) vol update<br>Rolling window with exact tick expiry</div>
+                    <div class="stat-label">O(1) volatility estimation<br>Rolling window with exact tick expiry</div>
                 </div>
                 <div class="stat-cell" role="row">
                     <div class="stat-value">0.49</div>
                     <div class="stat-unit">µs per call</div>
-                    <div class="stat-label">Fee-adjusted Kelly sizing<br>Parabolic taker fee model</div>
+                    <div class="stat-label">Fee-adjusted position sizing<br>Expected value with full fee model</div>
                 </div>
             </div>
             <div class="arch-grid">
@@ -1148,9 +1117,8 @@
         <p class="section-label">Risk Management</p>
         <h2 class="section-heading">Every threshold<br><em>has a derivation</em></h2>
         <p class="section-sub">
-            No magic numbers. Every control below is defined with its mathematical rationale
-            in <code style="font-size:14px;color:var(--blue-med)">core/config.py</code> and documented in full in
-            <a href="https://github.com/nxd914/kinzie/blob/main/docs/RISK_MODEL.md" target="_blank" rel="noopener" style="color:var(--blue-med);text-decoration:none">docs/RISK_MODEL.md</a>.
+            No magic numbers. Every control below is defined with a mathematical rationale
+            tied to fee structure, position sizing theory, and observed market dynamics.
         </p>
         <div class="risk-table-wrap">
             <table class="risk-table" aria-label="Risk controls">
@@ -1163,9 +1131,9 @@
                 </thead>
                 <tbody>
                     <tr>
-                        <td>Kelly fraction cap</td>
-                        <td>0.25×</td>
-                        <td>Absorbs model probability estimation error without ruin. Full Kelly requires confidence in both estimate and model — 0.25× is standard for research-grade systems.</td>
+                        <td>Position sizing cap</td>
+                        <td>0.25× theoretical max</td>
+                        <td>Absorbs model probability estimation error without ruin. Conservative multiplier applied to theoretical maximum — standard for systems with unverified edge at current fill count.</td>
                     </tr>
                     <tr>
                         <td>Minimum edge</td>
@@ -1221,39 +1189,6 @@
             </table>
         </div>
     </section>
-
-    <!-- Research / Perspectives -->
-    <div class="section" id="research" aria-label="Research">
-        <div class="research-grid">
-            <div class="research-left">
-                <p class="section-label">Research</p>
-                <h2 class="section-heading">Research &amp;<br>Perspectives</h2>
-                <p class="section-sub">
-                    We study prediction market microstructure, information propagation dynamics,
-                    and the mathematics of deterministic execution systems.
-                    All primary research documents are published openly.
-                </p>
-            </div>
-            <div class="research-items">
-                <a class="research-item" href="https://github.com/nxd914/kinzie/blob/main/docs/STRATEGY.md" target="_blank" rel="noopener">
-                    <div class="research-tag">Strategy</div>
-                    <div class="research-title">Latency Arbitrage on Binary Outcome Markets: Edge Thesis and Execution Architecture</div>
-                </a>
-                <a class="research-item" href="https://github.com/nxd914/kinzie/blob/main/docs/RISK_MODEL.md" target="_blank" rel="noopener">
-                    <div class="research-tag">Risk Management</div>
-                    <div class="research-title">Kelly Criterion Under Discrete Tick Regimes and Asymmetric Taker Fees</div>
-                </a>
-                <a class="research-item" href="https://github.com/nxd914/kinzie/blob/main/docs/CALIBRATION.md" target="_blank" rel="noopener">
-                    <div class="research-tag">Model Calibration</div>
-                    <div class="research-title">Bracket Contract Calibration: TWAP Settlement and Discrete Jump Dynamics</div>
-                </a>
-                <a class="research-item" href="https://github.com/nxd914/kinzie" target="_blank" rel="noopener">
-                    <div class="research-tag">Open Source</div>
-                    <div class="research-title">Full System Source: Agents, Pricing Model, Risk Controls, and Test Suite</div>
-                </a>
-            </div>
-        </div>
-    </div>
 
     <!-- Careers -->
     <div class="careers-band" id="careers" aria-label="Careers">
@@ -1325,15 +1260,10 @@
                     <a href="#who">Who We Are</a>
                     <a href="#approach">Our Approach</a>
                     <a href="#systems">Systems</a>
-                    <a href="#research">Research</a>
                 </div>
                 <div class="footer-col">
                     <a href="#careers">Careers</a>
                     <a href="#contact">Get in Touch</a>
-                    <a href="https://github.com/nxd914/kinzie" target="_blank" rel="noopener" class="footer-col-github">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
-                        GitHub
-                    </a>
                 </div>
             </div>
         </div>
