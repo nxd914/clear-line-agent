@@ -41,10 +41,10 @@ logger = logging.getLogger(__name__)
 SCAN_INTERVAL_SECONDS = 120     # re-price crypto contracts every 2 minutes
 SCAN_STARTUP_DELAY_SECONDS = 15  # brief pause for feeds to warm up
 SCAN_CONCURRENCY = 8            # parallel market evaluations
-SCAN_LIMIT = 50                 # max markets to evaluate per cycle
+SCAN_LIMIT = 200                # max markets to evaluate per cycle
 MIN_TIME_TO_CLOSE_MINUTES = 5   # crypto contracts are short-lived (15m, 1h)
 MAX_HOURS_TO_CLOSE = 4          # skip contracts expiring beyond this horizon (latency arb needs fast convergence)
-SIGNAL_SCAN_CANDIDATE_LIMIT = 120
+SIGNAL_SCAN_CANDIDATE_LIMIT = 400
 SIGNAL_COOLDOWN_SECONDS = 5     # tighter cooldown for sub-second crypto signals
 # Conservative vol floor for BTC/ETH in low-vol regimes.  Cold-start (vol=0)
 # is now handled by an explicit warmup guard in _score() rather than this floor.

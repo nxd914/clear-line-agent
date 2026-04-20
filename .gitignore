@@ -18,6 +18,7 @@ env/
 # Environment
 .env
 .env.*
+*.pem
 
 # Data / trade logs (never commit live or paper trade data)
 data/
