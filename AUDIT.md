@@ -1,0 +1,174 @@
+# Kinzie — Walk-Forward & Look-Ahead Bias Audit
+
+**Context:** 57 paper fills, +$64,732 total P&L, 96.4% win rate, XRP/SOL expansion active.
+**Question:** Would this performance hold if we converted to live trading?
+
+---
+
+## Structural finding: the model math is causally clean
+
+The core signal pipeline has no look-ahead bias. Every input to `spot_to_implied_prob()` at decision time is strictly backward-looking:
+- Spot price: live WebSocket tick
+- Realized vol: Welford rolling window over the past 60s/15min of historical ticks
+- Strike/expiry: Kalshi market metadata known at scan time
+
+Welford's algorithm processes ticks sequentially with no peek-ahead. No look-ahead bias in the math itself.
+
+The concerns below are all about **live vs. paper execution divergence**, not model math.
+
+---
+
+## Concerns — ordered by severity
+
+### 1. Paper execution has no slippage model *(MOST SIGNIFICANT)*
+
+**File:** `agents/execution_agent.py` lines 69–72
+
+```python
+fill_price = (
+    opp.market.yes_ask if opp.side == Side.YES
+    else opp.market.no_ask
+)
+```
+
+Paper fills are guaranteed at the **quoted ask, instantly, for any size**. In live trading:
+
+- You're entering on a momentum signal — the price is already moving. The Kalshi ask may already be lifted by the time your REST order hits the book.
+- Kalshi crypto markets are thin. A $10k position at a 30¢ YES ask = 33,333 contracts. If there are only 5,000 at 30¢, you walk up the book.
+- This single gap is likely responsible for 2–4% of the apparent per-trade edge in paper results.
+
+**What to fix:** Model slippage in paper mode. Either simulate a fill at `(ask + k * spread)` for some constant `k`, or cap contracts filled at a simulated depth and book the remainder at a worse price.
+
+---
+
+### 2. `BRACKET_CALIBRATION = 0.55` was fit to paper outcomes *(MEDIUM)*
+
+**File:** `core/pricing.py` line 22 and `core/config.py` lines 149–154
+
+> "Lowered from 0.70 after -$31k paper loss analysis (model=0.81 vs market=0.51 on ATM bracket)."
+
+This constant was tuned post-hoc on one observed paper loss event, then applied going forward on the *same dataset* being evaluated. Any resolution metrics that include bracket trades after the calibration adjustment are partially in-sample. The comment itself acknowledges: "Needs 50+ bracket fills to validate statistically." The system has 57 *total* fills, not 50 bracket fills.
+
+**What to fix:** Track bracket fills separately. Do not count bracket trades placed after the `0.55` calibration change as validation of that change. The calibration is provisional until 50+ bracket-specific fills.
+
+---
+
+### 3. Resolution heuristic can prematurely book wins *(MEDIUM)*
+
+**File:** `agents/resolution_agent.py` lines 345–368
+
+```python
+if yes_bid >= 0.99:       # → resolve YES
+if yes_ask <= 0.01:       # → resolve NO
+# Post-close heuristic:
+if implied >= 0.95:       # → resolve YES
+elif implied <= 0.05:     # → resolve NO
+```
+
+These price-level heuristics run *before* the authoritative `status == "settled" and result` path and fire on every polling cycle. A crypto-volatile market can briefly spike to `yes_bid=0.99` without having settled. If such a tick triggers a premature YES resolution on a winning position, the trade is booked as a win — and if it eventually settles NO, the position is already gone from the DB.
+
+**What to fix:** Require `status == "settled"` before applying any price-level heuristic. The heuristics should only run as a fallback for confirmed-settled markets where the `result` field is missing, not as a primary path.
+
+---
+
+### 4. Signal age gate is effectively disabled in paper mode *(MEDIUM)*
+
+**File:** `agents/risk_agent.py` lines 159–165
+
+```python
+signal_age = (now - opp.signal.timestamp).total_seconds()
+if signal_age > self._cfg.max_signal_age_seconds:  # 2.0s
+    return None
+```
+
+In paper mode, asyncio processes this synchronously at near-zero latency — every signal has age ~0ms. In live mode, add:
+- KalshiClient REST round-trip to place an order: ~200–500ms
+- RSA-PSS signing: ~1ms
+- Kalshi order processing: ~100–300ms
+- Signal queue backpressure on volatile days
+
+The 2-second gate may reject a meaningful fraction of live opportunities that paper always counts as filled. This means the effective fill rate and P&L in paper overstates what live would achieve.
+
+**What to fix:** Simulate realistic execution latency in paper mode (even a synthetic 300ms delay in `_paper_order`) so the 2-second gate applies proportionally.
+
+---
+
+### 5. The `replay_backtest` is not a walk-forward test *(STRUCTURAL)*
+
+**File:** `research/replay_backtest.py`
+
+The replay backtest reads the DB and recomputes model probabilities for past trades. This is a *calibration consistency check*, not an out-of-sample test. It can tell you whether the model's math is consistent with what was logged, but it cannot detect overfitting because:
+
+- Every trade in the DB was generated by the live model
+- The model and the backtest use identical parameters
+- There is no held-out test set, no time-based train/test split, and no parameter set evaluated on data it did not influence
+
+**What to fix:** To do a real walk-forward test, split the trade history at some cutoff date. Fit any adjustable parameter (`BRACKET_CALIBRATION`, `MIN_EDGE`, etc.) only on data before the cutoff, then evaluate on data after. Currently impossible because there is only one parameter that changed mid-run (`BRACKET_CALIBRATION`), and the change date is not recorded in the DB.
+
+---
+
+### 6. Position sizing ignores actual book depth *(MEDIUM)*
+
+**File:** `agents/risk_agent.py` and `core/kelly.py`
+
+`position_size()` allocates up to 10% of $100k = $10,000 per position. There is no check that Kalshi's order book has $10k of liquidity at the quoted ask. The `liquidity` field is stored on `KalshiMarket` and logged, but it is never used as an upper bound on position size.
+
+Live fills at scale will execute at worse average prices than the quoted ask, making Kelly fractions calculated against the ask systematically optimistic.
+
+**What to fix:** Cap `size_usdc` at `min(kelly_size, market.liquidity * LIQUIDITY_FRACTION)` in `RiskAgent._evaluate()`. A conservative fraction (e.g. 0.20) of available liquidity prevents walking the book.
+
+---
+
+### 7. Sharpe annualization assumption is arbitrary *(MINOR)*
+
+**File:** `core/config.py` line 169
+
+```python
+assumed_fills_per_day: int = 4
+```
+
+The Sharpe annualization in `ResolutionAgent._running_sharpe()` uses `sqrt(4 * 365)`. If actual fill cadence is higher (the system reports fills every ~42 seconds during active trading), this underestimates the annualization factor. The Sharpe number is effectively meaningless at n=57 regardless — the 95% CI on a Sharpe estimate at n=57 with Sharpe≈2 is approximately [0.5, 3.5].
+
+**What to fix:** Compute actual fill cadence from `placed_at` timestamps and use that for annualization, or switch to calendar-time Sharpe (daily P&L buckets as in `edge_analysis.py`) which is independent of fill rate assumptions.
+
+---
+
+### 8. XRP/SOL expansion is not out-of-sample *(MINOR)*
+
+`BRACKET_CALIBRATION`, `MIN_EDGE`, `MIN_CRYPTO_VOL`, and all thresholds were set based on BTC/ETH experience. XRP/SOL now contribute trades under those same parameters. XRP has different volatility dynamics (thinner order book, different TWAP settlement behavior) than BTC/ETH. Parameter transfer from BTC/ETH to XRP/SOL is untested. Positive XRP results so far are consistent with luck at low n.
+
+**What to fix:** Track per-symbol win rate and P&L in `edge_analysis.py` to detect if XRP/SOL are performing differently from BTC/ETH. Add a `min_symbol_fills_before_trust: int = 20` config param and log a warning when a symbol is below that threshold.
+
+---
+
+## What the 96.4% win rate actually means
+
+At a minimum edge of 4% over an average Kalshi mid of ~0.70, you'd expect model-implied win rates of ~74%. A 96.4% paper win rate over 57 fills decomposes as:
+
+| Source | Contribution |
+|--------|-------------|
+| Genuine model edge | Moderate — latency arb is real |
+| Lucky variance (n=57) | High — this is the dominant explanation |
+| Paper fill at ask with zero slippage | Captures full stated edge that live won't |
+| Resolution heuristic booking early wins | Small but non-zero |
+
+The latency arbitrage thesis is structurally sound — Kalshi does lag CEX spot — but paper results are optimistic on every dimension that matters for live execution.
+
+---
+
+## Summary: expected live vs. paper divergence
+
+| Concern | Estimated live degradation |
+|---------|---------------------------|
+| Slippage on momentum entries | 2–4% per-trade edge reduction |
+| Signal age rejections at live latency | 15–30% fewer fills approved |
+| Adverse selection (market already moved) | Edge on signal-triggered fills shrinks most |
+| Resolution heuristic risk | Inflates paper win rate, magnitude unknown |
+| Position sizing vs. book depth | Larger positions execute at worse average prices |
+| `BRACKET_CALIBRATION` overfitting | Bracket P&L may regress at more fills |
+
+**Recommendation:** Do not convert to live until:
+1. Slippage simulation is added to paper mode and win rate remains above 70% under realistic fill assumptions
+2. 100+ fills are accumulated (system requirement) with calibrated Sharpe ≥ 1.0
+3. Bracket fills are tracked separately and `BRACKET_CALIBRATION` is validated on 50+ bracket-specific fills
+4. Position size is capped relative to available book liquidity
