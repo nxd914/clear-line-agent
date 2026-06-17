@@ -2,7 +2,6 @@
 
 ![Python Version](https://img.shields.io/badge/python-%3E%3D3.11-blue.svg)
 ![C++ Standard](https://img.shields.io/badge/C%2B%2B-17-blue.svg)
-![PyTorch](https://img.shields.io/badge/PyTorch-%3E%3D2.2-ee4c2c.svg)
 ![License](https://img.shields.io/badge/license-Proprietary-red.svg)
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)
 
